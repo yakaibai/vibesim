@@ -1,12 +1,9 @@
 import assert from "node:assert/strict";
 import {
   GRID_SIZE,
-  KEEP_OUT,
-  expandRect,
   segmentHitsRect,
   snap,
   segmentLengthStats,
-  routeOrthogonal,
 } from "../geometry.js";
 import { routeAllConnections } from "../router.js";
 
@@ -31,18 +28,6 @@ function makeBlock(id, type, x, y, width, height, ports) {
     height,
     ports,
   };
-}
-
-function bounds(block) {
-  return expandRect(
-    {
-      left: block.x,
-      right: block.x + block.width,
-      top: block.y,
-      bottom: block.y + block.height,
-    },
-    KEEP_OUT
-  );
 }
 
 function boundsWithPorts(block) {
@@ -135,9 +120,9 @@ runTest("loop feedback avoids blocks and stays orthogonal", () => {
   routeAllConnections(state, 800, 600, { x: 0, y: 0 });
 
   const blockBounds = new Map([
-    [step.id, bounds(step)],
-    [sum.id, bounds(sum)],
-    [integrator.id, bounds(integrator)],
+    [step.id, boundsWithPorts(step)],
+    [sum.id, boundsWithPorts(sum)],
+    [integrator.id, boundsWithPorts(integrator)],
   ]);
 
   state.connections.forEach((conn) => {

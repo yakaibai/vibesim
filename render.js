@@ -3,8 +3,9 @@ import { routeAllConnections, routeDirtyConnections } from "./router.js";
 import { renderScope } from "./sim.js";
 
 const DEBUG_SELECTION = true;
-const DEBUG_WIRE_CHECKS = false;
+const DEBUG_WIRE_CHECKS = true;
 const SELECTION_PAD = 10;
+const HOP_RADIUS = 4;
 
 function createSvgElement(tag, attrs = {}, text = "") {
   const el = document.createElementNS("http://www.w3.org/2000/svg", tag);
@@ -15,12 +16,207 @@ function createSvgElement(tag, attrs = {}, text = "") {
   return el;
 }
 
+function renderSvgMath(group, mathMl, width, height) {
+  if (!group) return;
+  group.innerHTML = "";
+  const foreign = createSvgElement("foreignObject", {
+    x: 0,
+    y: 0,
+    width,
+    height,
+  });
+  const div = document.createElement("div");
+  div.setAttribute("xmlns", "http://www.w3.org/1999/xhtml");
+  div.className = "math-foreign";
+  div.innerHTML = mathMl;
+  foreign.appendChild(div);
+  group.appendChild(foreign);
+}
+
+let mathJaxQueued = false;
+let mathJaxRetryScheduled = false;
+function queueMathJaxTypeset() {
+  if (mathJaxQueued) return;
+  mathJaxQueued = true;
+  requestAnimationFrame(() => {
+    mathJaxQueued = false;
+    if (window.MathJax && typeof window.MathJax.typesetPromise === "function") {
+      window.MathJax.typesetPromise();
+      mathJaxRetryScheduled = false;
+    } else if (!mathJaxRetryScheduled) {
+      mathJaxRetryScheduled = true;
+      setTimeout(() => {
+        mathJaxRetryScheduled = false;
+        queueMathJaxTypeset();
+      }, 200);
+    }
+  });
+}
+
+function renderTeXMath(group, tex, width, height) {
+  if (!group) return;
+  group.innerHTML = "";
+  const foreign = createSvgElement("foreignObject", {
+    x: 0,
+    y: 0,
+    width,
+    height,
+  });
+  const div = document.createElement("div");
+  div.setAttribute("xmlns", "http://www.w3.org/1999/xhtml");
+  div.className = "math-foreign";
+  const span = document.createElement("span");
+  span.className = "mathjax-tex";
+  span.textContent = `\\(${tex}\\)`;
+  div.appendChild(span);
+  foreign.appendChild(div);
+  group.appendChild(foreign);
+  queueMathJaxTypeset();
+}
+
 function svgRect(x, y, w, h, cls) {
   return createSvgElement("rect", { x, y, width: w, height: h, class: cls });
 }
 
 function svgText(x, y, text) {
   return createSvgElement("text", { x, y, class: "block-text" }, text);
+}
+
+export function buildFallbackPath(fromPos, toPos) {
+  if (!fromPos || !toPos) return [];
+  if (fromPos.x === toPos.x || fromPos.y === toPos.y) {
+    return [fromPos, toPos];
+  }
+  return [fromPos, { x: fromPos.x, y: toPos.y }, toPos];
+}
+
+function buildSegments(points, owner) {
+  const segments = [];
+  if (!points || points.length < 2) return segments;
+  let runStart = points[0];
+  let prev = points[0];
+  let orientation = points[1].x === points[0].x ? "V" : "H";
+
+  const pushSegment = (start, end, isStubOverride = null) => {
+    if (start.x === end.x && start.y === end.y) return;
+    if (orientation === "V") {
+      const minY = Math.min(start.y, end.y);
+      const maxY = Math.max(start.y, end.y);
+      const length = maxY - minY;
+      const isStub =
+        isStubOverride ??
+        ((start === points[0] && length <= GRID_SIZE) || (end === points[points.length - 1] && length <= GRID_SIZE));
+      segments.push({
+        owner,
+        orientation: "V",
+        a: start,
+        b: end,
+        minY,
+        maxY,
+        x: start.x,
+        isStub,
+      });
+    } else {
+      const minX = Math.min(start.x, end.x);
+      const maxX = Math.max(start.x, end.x);
+      const length = maxX - minX;
+      const isStub =
+        isStubOverride ??
+        ((start === points[0] && length <= GRID_SIZE) || (end === points[points.length - 1] && length <= GRID_SIZE));
+      segments.push({
+        owner,
+        orientation: "H",
+        a: start,
+        b: end,
+        minX,
+        maxX,
+        y: start.y,
+        isStub,
+      });
+    }
+  };
+
+  for (let i = 1; i < points.length; i += 1) {
+    const curr = points[i];
+    const stepOrientation = curr.x === prev.x ? "V" : "H";
+    if (stepOrientation !== orientation) {
+      pushSegment(runStart, prev);
+      runStart = prev;
+      orientation = stepOrientation;
+    }
+    prev = curr;
+  }
+  pushSegment(runStart, prev);
+  return segments;
+}
+
+function getCrossingsOnHorizontal(seg, otherSegments) {
+  const hits = [];
+  const y = seg.y;
+  otherSegments.forEach((other) => {
+    if (other.orientation !== "V") return;
+    if (other.x <= seg.minX || other.x >= seg.maxX) return;
+    if (y <= other.minY || y >= other.maxY) return;
+    hits.push(other.x);
+  });
+  return hits;
+}
+
+function getCrossingsOnVertical(seg, otherSegments) {
+  const hits = [];
+  const x = seg.x;
+  otherSegments.forEach((other) => {
+    if (other.orientation !== "H") return;
+    if (other.y <= seg.minY || other.y >= seg.maxY) return;
+    if (x <= other.minX || x >= other.maxX) return;
+    hits.push(other.y);
+  });
+  return hits;
+}
+
+function buildPathWithHops(segments, otherSegments) {
+  if (!segments.length) return "";
+  const commands = [];
+  let current = segments[0].a;
+  commands.push(`M ${current.x} ${current.y}`);
+
+  segments.forEach((seg) => {
+    if (current.x !== seg.a.x || current.y !== seg.a.y) {
+      commands.push(`L ${seg.a.x} ${seg.a.y}`);
+      current = seg.a;
+    }
+
+    if (seg.isStub) {
+      commands.push(`L ${seg.b.x} ${seg.b.y}`);
+      current = seg.b;
+      return;
+    }
+
+    if (seg.orientation === "H") {
+      const dir = seg.a.x <= seg.b.x ? 1 : -1;
+      const crossings = getCrossingsOnHorizontal(seg, otherSegments)
+        .filter((x) => x > seg.minX + HOP_RADIUS && x < seg.maxX - HOP_RADIUS)
+        .sort((a, b) => (dir === 1 ? a - b : b - a));
+      crossings.forEach((x) => {
+        commands.push(`L ${x - HOP_RADIUS * dir} ${seg.a.y}`);
+        commands.push(`a ${HOP_RADIUS} ${HOP_RADIUS} 0 0 1 ${HOP_RADIUS * 2 * dir} 0`);
+      });
+      commands.push(`L ${seg.b.x} ${seg.b.y}`);
+    } else {
+      const dir = seg.a.y <= seg.b.y ? 1 : -1;
+      const crossings = getCrossingsOnVertical(seg, otherSegments)
+        .filter((y) => y > seg.minY + HOP_RADIUS && y < seg.maxY - HOP_RADIUS)
+        .sort((a, b) => (dir === 1 ? a - b : b - a));
+      crossings.forEach((y) => {
+        commands.push(`L ${seg.a.x} ${y - HOP_RADIUS * dir}`);
+        commands.push(`a ${HOP_RADIUS} ${HOP_RADIUS} 0 0 1 0 ${HOP_RADIUS * 2 * dir}`);
+      });
+      commands.push(`L ${seg.b.x} ${seg.b.y}`);
+    }
+    current = seg.b;
+  });
+
+  return commands.join(" ");
 }
 
 function renderRectBlock(block, title, lines = [], iconType = null) {
@@ -118,6 +314,91 @@ function drawIcon(type, x, y) {
     addText("fx");
   }
   return g;
+}
+
+function buildTransferMathML(num = [], den = []) {
+  const numRow = buildPolyMathML(num);
+  const denRow = buildPolyMathML(den);
+  return `<math xmlns="http://www.w3.org/1998/Math/MathML"><mfrac>${numRow}${denRow}</mfrac></math>`;
+}
+
+function buildPolyMathML(coeffs = []) {
+  const list = Array.isArray(coeffs) ? coeffs : [];
+  if (list.length === 0) {
+    return "<mrow><mn>0</mn></mrow>";
+  }
+  const degree = list.length - 1;
+  const parts = [];
+  list.forEach((coeff, idx) => {
+    const power = degree - idx;
+    const value = Number(coeff) || 0;
+    if (value === 0) return;
+    const sign = value < 0 ? "-" : "+";
+    const abs = Math.abs(value);
+    const isFirst = parts.length === 0;
+    if (!isFirst) {
+      parts.push(`<mo>${sign}</mo>`);
+    } else if (sign === "-") {
+      parts.push("<mo>-</mo>");
+    }
+    if (power === 0) {
+      parts.push(`<mn>${abs}</mn>`);
+      return;
+    }
+    if (abs !== 1) {
+      parts.push(`<mn>${abs}</mn>`);
+      parts.push("<mo>&#x2062;</mo>");
+    }
+    if (power === 1) {
+      parts.push("<mi>s</mi>");
+    } else {
+      parts.push(`<msup><mi>s</mi><mn>${power}</mn></msup>`);
+    }
+  });
+  if (parts.length === 0) {
+    return "<mrow><mn>0</mn></mrow>";
+  }
+  return `<mrow>${parts.join("")}</mrow>`;
+}
+
+function buildTransferTeX(num = [], den = []) {
+  const numRow = buildPolyTeX(num);
+  const denRow = buildPolyTeX(den);
+  return `\\frac{${numRow}}{${denRow}}`;
+}
+
+function buildPolyTeX(coeffs = []) {
+  const list = Array.isArray(coeffs) ? coeffs : [];
+  if (list.length === 0) return "0";
+  const degree = list.length - 1;
+  const parts = [];
+  list.forEach((coeff, idx) => {
+    const power = degree - idx;
+    const value = Number(coeff) || 0;
+    if (value === 0) return;
+    const sign = value < 0 ? "-" : "+";
+    const abs = Math.abs(value);
+    const isFirst = parts.length === 0;
+    if (!isFirst) {
+      parts.push(sign);
+    } else if (sign === "-") {
+      parts.push("-");
+    }
+    if (power === 0) {
+      parts.push(`${abs}`);
+      return;
+    }
+    if (abs !== 1) {
+      parts.push(`${abs}`);
+    }
+    if (power === 1) {
+      parts.push("s");
+    } else {
+      parts.push(`s^{${power}}`);
+    }
+  });
+  if (parts.length === 0) return "0";
+  return parts.join("");
 }
 
 const blockTemplates = {
@@ -273,13 +554,25 @@ const blockTemplates = {
     },
   },
   integrator: {
-    width: 90,
-    height: 60,
-    inputs: [{ x: 0, y: 30, side: "left" }],
-    outputs: [{ x: 90, y: 30, side: "right" }],
+    width: 80,
+    height: 80,
+    inputs: [{ x: 0, y: 40, side: "left" }],
+    outputs: [{ x: 80, y: 40, side: "right" }],
     defaultParams: {},
     render: (block) => {
-      renderRectBlock(block, "Integrator", ["1/s"], "integrator");
+      const group = block.group;
+      group.appendChild(
+        createSvgElement("rect", {
+          x: 0,
+          y: 0,
+          width: block.width,
+          height: block.height,
+          class: "block-body integrator-body",
+        })
+      );
+      const mathGroup = createSvgElement("g", { class: "integrator-math" });
+      group.appendChild(mathGroup);
+      renderTeXMath(mathGroup, "\\frac{1}{s}", block.width, block.height);
     },
   },
   derivative: {
@@ -353,18 +646,25 @@ const blockTemplates = {
     },
   },
   tf: {
-    width: 140,
-    height: 70,
-    inputs: [{ x: 0, y: 35, side: "left" }],
-    outputs: [{ x: 140, y: 35, side: "right" }],
+    width: 160,
+    height: 80,
+    inputs: [{ x: 0, y: 40, side: "left" }],
+    outputs: [{ x: 160, y: 40, side: "right" }],
     defaultParams: { num: [3], den: [1, 3] },
     render: (block) => {
-      renderRectBlock(
-        block,
-        "Transfer",
-        [`num=[${block.params.num.join(",")}]`, `den=[${block.params.den.join(",")}]`],
-        "tf"
+      const group = block.group;
+      group.appendChild(
+        createSvgElement("rect", {
+          x: 0,
+          y: 0,
+          width: block.width,
+          height: block.height,
+          class: "block-body tf-body",
+        })
       );
+      const mathGroup = createSvgElement("g", { class: "tf-math" });
+      group.appendChild(mathGroup);
+      renderTeXMath(mathGroup, buildTransferTeX(block.params.num, block.params.den), block.width, block.height);
     },
   },
   zoh: {
@@ -443,9 +743,38 @@ const blockTemplates = {
 
 export function createRenderer({ svg, blockLayer, wireLayer, overlayLayer, state, onSelectBlock, onSelectConnection }) {
   const debugLog = document.getElementById("debugLog");
+  const copyDebugButton = document.getElementById("copyDebug");
   if (!DEBUG_WIRE_CHECKS && debugLog) {
     const panel = debugLog.closest(".debug-panel");
     if (panel) panel.style.display = "none";
+  }
+  if (DEBUG_WIRE_CHECKS && debugLog && copyDebugButton) {
+    copyDebugButton.addEventListener("click", async () => {
+      const text = debugLog.textContent || "";
+      if (!text) return;
+      try {
+        await navigator.clipboard.writeText(text);
+      } catch (err) {
+        const textarea = document.createElement("textarea");
+        textarea.value = text;
+        textarea.setAttribute("readonly", "true");
+        textarea.style.position = "fixed";
+        textarea.style.left = "-9999px";
+        document.body.appendChild(textarea);
+        textarea.select();
+        document.execCommand("copy");
+        document.body.removeChild(textarea);
+      }
+    });
+  }
+
+  function refreshDebugLog() {
+    if (!DEBUG_WIRE_CHECKS || !debugLog) return;
+    try {
+      debugLog.textContent = buildDebugSnapshot();
+    } catch (err) {
+      debugLog.textContent = `Debug error: ${err?.message || err}`;
+    }
   }
   const selectionRect = createSvgElement("rect", {
     class: "selection-rect",
@@ -631,6 +960,7 @@ export function createRenderer({ svg, blockLayer, wireLayer, overlayLayer, state
       block.x = Math.max(0, x);
       block.y = Math.max(0, y);
       updateBlockTransform(block);
+      state.fastRouting = true;
       state.routingDirty = true;
       if (state.dirtyBlocks) state.dirtyBlocks.add(block.id);
       updateConnections();
@@ -640,11 +970,16 @@ export function createRenderer({ svg, blockLayer, wireLayer, overlayLayer, state
       if (dragging) event.preventDefault();
       dragging = false;
       startClient = null;
+      state.fastRouting = false;
+      if (state.dirtyBlocks) state.dirtyBlocks.add(block.id);
+      state.routingDirty = true;
+      updateConnections(true);
     });
 
     handle.addEventListener("pointercancel", () => {
       dragging = false;
       startClient = null;
+      state.fastRouting = false;
     });
   }
 
@@ -735,7 +1070,7 @@ export function createRenderer({ svg, blockLayer, wireLayer, overlayLayer, state
       state.routingScheduled = false;
       if (state.isPanning || state.isPinching) return;
       if (!runForced && !state.routingDirty) return;
-      if (DEBUG_WIRE_CHECKS && debugLog) debugLog.textContent = buildDebugSnapshot();
+      const timeLimitMs = state.fastRouting ? 80 : 1000;
       const worldW = Number(svg.dataset.worldWidth) || svg.clientWidth || 1;
       const worldH = Number(svg.dataset.worldHeight) || svg.clientHeight || 1;
       const needsFullRoute = state.connections.some((conn) => !conn.points || conn.points.length < 2);
@@ -745,25 +1080,11 @@ export function createRenderer({ svg, blockLayer, wireLayer, overlayLayer, state
         dirtySet = computeDirtyConnections();
       }
       if (!needsFullRoute && dirtySet && dirtySet.size > 0) {
-        paths = routeDirtyConnections(state, worldW, worldH, { x: 0, y: 0 }, dirtySet);
-        paths.forEach((d, conn) => {
-          if (!d) return;
-          conn.path.setAttribute("d", d);
-          if (DEBUG_WIRE_CHECKS) {
-            const bad = checkWireIssues(conn, debugLog);
-            conn.path.classList.toggle("wire-error", bad);
-          }
-        });
+        paths = routeDirtyConnections(state, worldW, worldH, { x: 0, y: 0 }, dirtySet, timeLimitMs);
+        applyWirePaths(paths);
       } else if (needsFullRoute || !dirtySet) {
-        paths = routeAllConnections(state, worldW, worldH, { x: 0, y: 0 });
-        paths.forEach((d, conn) => {
-          if (!d) return;
-          conn.path.setAttribute("d", d);
-          if (DEBUG_WIRE_CHECKS) {
-            const bad = checkWireIssues(conn, debugLog);
-            conn.path.classList.toggle("wire-error", bad);
-          }
-        });
+        paths = routeAllConnections(state, worldW, worldH, { x: 0, y: 0 }, timeLimitMs);
+        applyWirePaths(paths);
       } else {
         updateSelectionBox();
         state.routingDirty = false;
@@ -782,18 +1103,48 @@ export function createRenderer({ svg, blockLayer, wireLayer, overlayLayer, state
     const worldW = Number(svg.dataset.worldWidth) || svg.clientWidth || 1;
     const worldH = Number(svg.dataset.worldHeight) || svg.clientHeight || 1;
     const paths = routeAllConnections(state, worldW, worldH, { x: 0, y: 0 }, timeLimitMs, false);
-    paths.forEach((d, conn) => {
-      if (!d) return;
+    applyWirePaths(paths);
+    state.routingDirty = false;
+    if (state.dirtyBlocks) state.dirtyBlocks.clear();
+    if (state.dirtyConnections) state.dirtyConnections.clear();
+    updateSelectionBox();
+    refreshDebugLog();
+  }
+
+  function applyWirePaths(paths) {
+    const segmentMap = new Map();
+    state.connections.forEach((conn) => {
+      let points = conn.points || [];
+      if (!points || points.length < 2) {
+        points = buildFallbackPathFromPorts(conn);
+      }
+      const renderPoints = state.fastRouting ? buildDragRenderPoints(conn, points) : points;
+      const segments = buildSegments(renderPoints, conn);
+      segmentMap.set(conn, segments);
+    });
+    const priorSegments = [];
+    state.connections.forEach((conn) => {
+      let points = conn.points || [];
+      if (!points || points.length < 2) {
+        points = buildFallbackPathFromPorts(conn);
+      }
+      const renderPoints = state.fastRouting ? buildDragRenderPoints(conn, points) : points;
+      if (!renderPoints.length) {
+        conn.path.setAttribute("d", "");
+        return;
+      }
+      const segments = segmentMap.get(conn) || [];
+      const otherSegments = priorSegments.slice();
+      const d = buildPathWithHops(segments, otherSegments);
       conn.path.setAttribute("d", d);
+      segments.forEach((seg) => {
+        if (!seg.isStub) priorSegments.push(seg);
+      });
       if (DEBUG_WIRE_CHECKS) {
         const bad = checkWireIssues(conn, debugLog);
         conn.path.classList.toggle("wire-error", bad);
       }
     });
-    state.routingDirty = false;
-    if (state.dirtyBlocks) state.dirtyBlocks.clear();
-    if (state.dirtyConnections) state.dirtyConnections.clear();
-    updateSelectionBox();
   }
 
   function computeDirtyConnections() {
@@ -878,6 +1229,78 @@ export function createRenderer({ svg, blockLayer, wireLayer, overlayLayer, state
     }
     writeDebug(logEl, `${formatWireIssue(conn, issues)}${metrics}`);
     return true;
+  }
+
+  function buildDragRenderPoints(conn, points) {
+    const fromPos = getPortPositionRaw(conn.from, "out", conn.fromIndex ?? 0);
+    const toPos = getPortPositionRaw(conn.to, "in", conn.toIndex ?? 0);
+    if (!fromPos || !toPos) return points;
+    if (!points || points.length === 0) {
+      return buildFallbackPath(fromPos, toPos);
+    }
+    const start = points[0];
+    const end = points[points.length - 1];
+    let result = points.slice();
+    if (start.x !== fromPos.x || start.y !== fromPos.y) {
+      const head = buildOrthogonalHead(fromPos, start);
+      result = [...head, ...result];
+    }
+    if (end.x !== toPos.x || end.y !== toPos.y) {
+      const tail = buildOrthogonalTail(end, toPos);
+      result = [...result, ...tail];
+    }
+    return dedupePoints(result);
+  }
+
+  function buildFallbackPathFromPorts(conn) {
+    const fromPos = getPortPositionRaw(conn.from, "out", conn.fromIndex ?? 0);
+    const toPos = getPortPositionRaw(conn.to, "in", conn.toIndex ?? 0);
+    if (!fromPos || !toPos) return [];
+    return buildFallbackPath(fromPos, toPos);
+  }
+
+  function buildOrthogonalHead(fromPos, toPos) {
+    if (fromPos.x === toPos.x || fromPos.y === toPos.y) {
+      return [fromPos];
+    }
+    return [fromPos, { x: fromPos.x, y: toPos.y }];
+  }
+
+  function buildOrthogonalTail(fromPos, toPos) {
+    if (fromPos.x === toPos.x || fromPos.y === toPos.y) {
+      return [fromPos, toPos];
+    }
+    return [fromPos, { x: fromPos.x, y: toPos.y }, toPos];
+  }
+
+  function dedupePoints(points) {
+    if (points.length < 2) return points;
+    const deduped = [points[0]];
+    for (let i = 1; i < points.length; i += 1) {
+      const prev = deduped[deduped.length - 1];
+      const next = points[i];
+      if (prev.x === next.x && prev.y === next.y) continue;
+      deduped.push(next);
+    }
+    return deduped;
+  }
+
+  function getPortPosition(blockId, type, index) {
+    const block = state.blocks.get(blockId);
+    if (!block) return null;
+    const port = block.ports.find((p) => p.type === type && p.index === index);
+    if (!port) return null;
+    const pos = rotatePoint({ x: block.x + port.x, y: block.y + port.y }, block);
+    return { x: snap(pos.x), y: snap(pos.y) };
+  }
+
+  function getPortPositionRaw(blockId, type, index) {
+    const block = state.blocks.get(blockId);
+    if (!block) return null;
+    const port = block.ports.find((p) => p.type === type && p.index === index);
+    if (!port) return null;
+    const pos = rotatePoint({ x: block.x + port.x, y: block.y + port.y }, block);
+    return { x: pos.x, y: pos.y };
   }
 
   function checkPortDirections(conn, points, issues) {
@@ -1071,7 +1494,7 @@ export function createRenderer({ svg, blockLayer, wireLayer, overlayLayer, state
       top = Math.min(top, cy - PORT_RADIUS);
       bottom = Math.max(bottom, cy + PORT_RADIUS);
     });
-    const padding = GRID_SIZE;
+    const padding = 0;
     return {
       left: left - padding,
       right: right + padding,
@@ -1098,6 +1521,7 @@ export function createRenderer({ svg, blockLayer, wireLayer, overlayLayer, state
 
   function writeDebug(logEl, text) {
     if (!logEl) return;
+    if (text.startsWith("[wire")) return;
     logEl.textContent += `\n${text}`;
   }
 
@@ -1126,37 +1550,127 @@ export function createRenderer({ svg, blockLayer, wireLayer, overlayLayer, state
   }
 
   function buildDebugSnapshot() {
-    const blocks = Array.from(state.blocks.values())
-      .map((block) => {
-        const ports = block.ports
-          .map((port) => `{x:${port.x},y:${port.y},side:"${port.side}",type:"${port.type}",index:${port.index}}`)
-          .join(", ");
-        return `  makeBlock("${block.id}", "${block.type}", ${block.x}, ${block.y}, ${block.width}, ${block.height}, [${ports}])`;
-      })
-      .join(",\n");
-    const conns = state.connections
-      .map((conn) => `  { from: "${conn.from}", to: "${conn.to}", toIndex: ${conn.toIndex}, fromIndex: ${conn.fromIndex ?? 0} }`)
-      .join(",\n");
-    const summaries = state.connections
-      .map((conn) => {
-        const metrics = formatWireDebugInfo(conn);
-        if (!conn.points || conn.points.length < 2) {
-          return `[wire ${conn.from}->${conn.to}] no path${metrics}`;
-        }
-        return `[wire ${conn.from}->${conn.to}]${metrics}`;
-      })
-      .join("\n");
-    return [
-      "Wire checks:",
-      "Test snapshot:",
-      "const blocks = new Map([",
-      blocks,
-      "]);",
-      "const connections = [",
-      conns,
-      "];",
-      summaries,
-    ].join("\n");
+    const nodeLines = [];
+    state.blocks.forEach((block) => {
+      block.ports.forEach((port) => {
+        const raw = rotatePoint({ x: block.x + port.x, y: block.y + port.y }, block);
+        const gridX = Math.round(raw.x / GRID_SIZE);
+        const gridY = Math.round(raw.y / GRID_SIZE);
+        const side = getPortSide(block, raw);
+        const dir = side === "left" ? "left" : side === "right" ? "right" : side === "top" ? "up" : "down";
+        nodeLines.push(
+          `${block.id} port:${port.type}${port.index} px=(${Math.round(raw.x)},${Math.round(raw.y)}) grid=(${gridX},${gridY}) dir=${dir}`
+        );
+      });
+    });
+    const wireLines = [];
+    const router = typeof window !== "undefined" ? window.__routerLast : null;
+    const debugObstacles = buildDebugObstacles();
+    const debugSettings = {
+      lengthCost: router?.settings?.lengthCost ?? 1,
+      turnCost: router?.settings?.turnCost ?? 6,
+      hopCost: router?.settings?.hopCost ?? 20,
+      nearWirePenalty1: router?.settings?.nearWirePenalty1 ?? 6,
+      nearWirePenalty2: router?.settings?.nearWirePenalty2 ?? 2,
+      nearObstaclePenalty1: router?.settings?.nearObstaclePenalty1 ?? 10,
+      nearObstaclePenalty2: router?.settings?.nearObstaclePenalty2 ?? 4,
+    };
+    const wireCosts = new Map();
+    if (router?.result?.wires) {
+      router.result.wires.forEach((wire, key) => {
+        wireCosts.set(key, wire.cost || {});
+      });
+    }
+    state.connections.forEach((conn) => {
+      const fromIndex = conn.fromIndex ?? 0;
+      const toIndex = conn.toIndex ?? 0;
+      const key = `${conn.from}:${fromIndex}->${conn.to}:${toIndex}`;
+      const points = conn.points || [];
+      const gridPoints = points.map((pt) => `(${Math.round(pt.x / GRID_SIZE)},${Math.round(pt.y / GRID_SIZE)})`).join(" ");
+      const length = Math.max(0, points.length - 1);
+      let turns = 0;
+      let hops = 0;
+      for (let i = 2; i < points.length; i += 1) {
+        const a = points[i - 2];
+        const b = points[i - 1];
+        const c = points[i];
+        const dir1 = a.x === b.x ? "V" : "H";
+        const dir2 = b.x === c.x ? "V" : "H";
+        if (dir1 !== dir2) turns += 1;
+      }
+      const cost = wireCosts.get(key);
+      const near = cost?.nearBreakdown ?? {};
+      const wireLen = cost?.length ?? length;
+      const wireTurns = cost?.turns ?? turns;
+      const wireHops = cost?.hops ?? hops;
+      const obsNear = computeDebugObsNear(points, debugObstacles, conn.from, conn.to);
+      const obs1 = obsNear.obs1;
+      const obs2 = obsNear.obs2;
+      const nearCost =
+        (near.wire1 ?? 0) * debugSettings.nearWirePenalty1 +
+        (near.wire2 ?? 0) * debugSettings.nearWirePenalty2 +
+        obs1 * debugSettings.nearObstaclePenalty1 +
+        obs2 * debugSettings.nearObstaclePenalty2;
+      const total =
+        wireLen * debugSettings.lengthCost +
+        wireTurns * debugSettings.turnCost +
+        wireHops * debugSettings.hopCost +
+        nearCost;
+      wireLines.push(
+        `${conn.from} port:out${fromIndex} -> ${conn.to} port:in${toIndex} len=${wireLen} turns=${wireTurns} hops=${wireHops} wire1=${near.wire1 ?? 0} wire2=${near.wire2 ?? 0} obs1=${obs1} obs2=${obs2} cost=${total} route=${gridPoints}`
+      );
+    });
+    const obstacleLines = [];
+    if (debugObstacles.length) {
+      obstacleLines.push(`obstacles=${JSON.stringify(debugObstacles)}`);
+    }
+    return ["nodes:", ...nodeLines, "wires:", ...wireLines, ...obstacleLines].join("\n");
+  }
+
+  function buildDebugObstacles() {
+    const PORT_RADIUS = 6;
+    const obstacles = [];
+    state.blocks.forEach((block) => {
+      const bounds = getRotatedBounds(block);
+      let left = bounds.left;
+      let right = bounds.right;
+      let top = bounds.top;
+      let bottom = bounds.bottom;
+      block.ports.forEach((port) => {
+        const pos = rotatePoint({ x: block.x + port.x, y: block.y + port.y }, block);
+        left = Math.min(left, pos.x - PORT_RADIUS);
+        right = Math.max(right, pos.x + PORT_RADIUS);
+        top = Math.min(top, pos.y - PORT_RADIUS);
+        bottom = Math.max(bottom, pos.y + PORT_RADIUS);
+      });
+      obstacles.push({
+        x0: Math.floor(left / GRID_SIZE),
+        y0: Math.floor(top / GRID_SIZE),
+        x1: Math.floor(right / GRID_SIZE),
+        y1: Math.floor(bottom / GRID_SIZE),
+        owner: block.id,
+      });
+    });
+    return obstacles;
+  }
+
+  function computeDebugObsNear(points, obstacles, fromBlockId, toBlockId) {
+    let obs1 = 0;
+    let obs2 = 0;
+    if (!points || !points.length) return { obs1, obs2 };
+    points.forEach((pt) => {
+      const gx = Math.round(pt.x / GRID_SIZE);
+      const gy = Math.round(pt.y / GRID_SIZE);
+      let minDist = Infinity;
+      obstacles.forEach((obs) => {
+        const dx = gx < obs.x0 ? obs.x0 - gx : gx > obs.x1 ? gx - obs.x1 : 0;
+        const dy = gy < obs.y0 ? obs.y0 - gy : gy > obs.y1 ? gy - obs.y1 : 0;
+        minDist = Math.min(minDist, dx + dy);
+      });
+      if (minDist <= 1) obs1 += 1;
+      else if (minDist <= 2) obs2 += 1;
+    });
+    return { obs1, obs2 };
   }
 
   function updateSelectionBox() {
@@ -1324,9 +1838,15 @@ export function createRenderer({ svg, blockLayer, wireLayer, overlayLayer, state
       if (texts[1]) texts[1].textContent = `w=${block.params.width}`;
     }
     if (block.type === "tf") {
-      const texts = block.group.querySelectorAll("text");
-      if (texts[1]) texts[1].textContent = `num=[${block.params.num.join(",")}]`;
-      if (texts[2]) texts[2].textContent = `den=[${block.params.den.join(",")}]`;
+      const mathGroup = block.group.querySelector(".tf-math");
+      if (mathGroup) {
+        renderTeXMath(
+          mathGroup,
+          buildTransferTeX(block.params.num, block.params.den),
+          block.width,
+          block.height
+        );
+      }
     }
     if (block.type === "zoh") {
       const texts = block.group.querySelectorAll("text");

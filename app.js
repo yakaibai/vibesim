@@ -13,6 +13,7 @@ const runtimeInput = document.getElementById("runtimeInput");
 const inspectorBody = document.getElementById("inspectorBody");
 const deleteSelectionBtn = document.getElementById("deleteSelection");
 const rotateSelectionBtn = document.getElementById("rotateSelection");
+const errorBox = document.getElementById("errorBox");
 
 if (rotateSelectionBtn) rotateSelectionBtn.disabled = true;
 
@@ -28,6 +29,7 @@ const state = {
   isPanning: false,
   routingDirty: false,
   routingScheduled: false,
+  fastRouting: false,
   dirtyBlocks: new Set(),
   dirtyConnections: new Set(),
 };
@@ -502,8 +504,10 @@ function init() {
         statusEl.textContent = `Added ${type}`;
       } catch (error) {
         statusEl.textContent = `Error adding ${type}`;
-        errorBox.textContent = `Error: ${error?.message || error}`;
-        errorBox.style.display = "block";
+        if (errorBox) {
+          errorBox.textContent = `Error: ${error?.message || error}`;
+          errorBox.style.display = "block";
+        }
       }
     });
   });

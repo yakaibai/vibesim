@@ -5,6 +5,13 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Vibesim</title>
   <link rel="stylesheet" href="style.css">
+  <script>
+    window.MathJax = {
+      tex: { inlineMath: [["$", "$"], ["\\(", "\\)"]] },
+      svg: { fontCache: "global" },
+    };
+  </script>
+  <script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-svg.js" defer></script>
 </head>
 <body>
   <header class="topbar">
@@ -76,6 +83,7 @@
       </div>
       <div id="debugPanel" class="debug-panel">
         <h3>Debug</h3>
+        <button id="copyDebug" class="secondary">Copy debug</button>
         <pre id="debugLog">Routing debug output will appear here.</pre>
       </div>
     </aside>

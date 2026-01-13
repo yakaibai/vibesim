@@ -1,653 +1,925 @@
-import {
-  GRID_SIZE,
-  KEEP_OUT,
-  snap,
-  expandRect,
-  routeOrthogonal,
-  appendOrth,
-  simplifyPoints,
-  segmentHitsRect,
-  toNode,
-} from "./geometry.js";
+import { GRID_SIZE, snap } from "./geometry.js";
 
-const PORT_RADIUS = 6;
-const HOP_RADIUS = 4;
+export function routeConnections2({
+  nodes = [],
+  connections = [],
+  obstacles = [],
+  prevSolution = null,
+  settings = {},
+} = {}) {
+  const startTime = Date.now();
+  const opts = {
+    maxTimeMs: settings.maxTimeMs ?? 200,
+    lengthCost: settings.lengthCost ?? 1,
+    turnCost: settings.turnCost ?? 6,
+    hopCost: settings.hopCost ?? 20,
+    nearObstacleDistance: settings.nearObstacleDistance ?? 0,
+    nearObstaclePenalty: settings.nearObstaclePenalty ?? 0,
+    nearWirePenalty1: settings.nearWirePenalty1 ?? 0,
+    nearWirePenalty2: settings.nearWirePenalty2 ?? 0,
+    nearObstaclePenalty1: settings.nearObstaclePenalty1 ?? 0,
+    nearObstaclePenalty2: settings.nearObstaclePenalty2 ?? 0,
+    incremental: settings.incremental ?? false,
+    fullOptimize: settings.fullOptimize ?? true,
+    searchPadding: settings.searchPadding ?? 20,
+    changedConnections: new Set(settings.changedConnections ?? []),
+    changedNodes: new Set(settings.changedNodes ?? []),
+  };
 
-const DEBUG_ROUTE = true;
-const CHECK_TURN_OPTIMALITY = false;
-const USE_TWO_TURN_SHORTCUT = true;
+  const nodeMap = new Map(nodes.map((node) => [node.id, node]));
+  const connectionKeys = connections.map((conn, idx) => connectionKey(conn, idx));
+  const connectionMeta = new Map();
+  connections.forEach((conn, idx) => {
+    const key = connectionKeys[idx];
+    connectionMeta.set(key, {
+      from: conn.from,
+      to: conn.to,
+      fromBlock: blockIdFromNodeId(conn.from),
+      toBlock: blockIdFromNodeId(conn.to),
+    });
+  });
 
-const COST = {
-  turn: 30,
-  wire: 200,
-  wireNear: 120,
-  wireFar: 40,
-  node: 80,
-  nodeNear: 40,
-  cross: 60,
-  edgeOverlap: 5000,
-};
-const ROUTE_TIME_LIMIT_MS = 100;
+  const prevWires = new Map();
+  if (prevSolution && prevSolution.wires) {
+    if (prevSolution.wires instanceof Map) {
+      prevSolution.wires.forEach((wire, key) => prevWires.set(key, wire));
+    } else {
+      Object.entries(prevSolution.wires).forEach(([key, wire]) => prevWires.set(key, wire));
+    }
+  }
+
+  const dirtyConnections = new Set();
+  connections.forEach((conn, idx) => {
+    const key = connectionKeys[idx];
+    const dirty =
+      !opts.incremental ||
+      opts.fullOptimize ||
+      opts.changedConnections.has(key) ||
+      opts.changedNodes.has(conn.from) ||
+      opts.changedNodes.has(conn.to) ||
+      !prevWires.has(key);
+    if (dirty) dirtyConnections.add(key);
+  });
+
+  const bounds = computeBounds(nodes, obstacles, opts.searchPadding);
+  const obstacleGrid = buildObstacleGrid(obstacles);
+  const routedWires = new Map();
+
+  const staticWires = [];
+  connections.forEach((conn, idx) => {
+    const key = connectionKeys[idx];
+    if (!dirtyConnections.has(key)) {
+      const wire = prevWires.get(key);
+      if (wire && Array.isArray(wire.points)) {
+        routedWires.set(key, wire);
+        staticWires.push({ points: wire.points, meta: connectionMeta.get(key) });
+      }
+    }
+  });
+
+  const occupancy = buildOccupancy(staticWires);
+  const costs = { total: 0, length: 0, turns: 0, hops: 0, near: 0, failed: 0 };
+  const nearBreakdown = { wire1: 0, wire2: 0, obs1: 0, obs2: 0 };
+  const failures = [];
+
+  connections.forEach((conn, idx) => {
+    const key = connectionKeys[idx];
+    if (!dirtyConnections.has(key)) return;
+    if (Date.now() - startTime > opts.maxTimeMs) {
+      costs.failed += 1;
+      return;
+    }
+    const from = nodeMap.get(conn.from);
+    const to = nodeMap.get(conn.to);
+    if (!from || !to) {
+      costs.failed += 1;
+      return;
+    }
+    const result = routeSingleConnection({
+      from,
+      to,
+      obstacles,
+      obstacleGrid,
+      occupancy,
+      bounds,
+      opts,
+      meta: {
+        from: conn.from,
+        to: conn.to,
+        key,
+        fromBlock: blockIdFromNodeId(conn.from),
+        toBlock: blockIdFromNodeId(conn.to),
+      },
+    });
+    if (result.points.length === 0) {
+      costs.failed += 1;
+      failures.push({
+        key,
+        from: from.id,
+        to: to.id,
+        reason: result.reason || "no_path",
+        start: { x: from.x, y: from.y, dir: from.dir },
+        end: { x: to.x, y: to.y, dir: to.dir },
+      });
+      return;
+    }
+    result.key = key;
+    routedWires.set(key, result);
+    occupancyAddWire(occupancy, result.points, {
+      from: conn.from,
+      to: conn.to,
+      key,
+      fromBlock: blockIdFromNodeId(conn.from),
+      toBlock: blockIdFromNodeId(conn.to),
+    });
+    costs.total += result.cost.total;
+    costs.length += result.cost.length;
+    costs.turns += result.cost.turns;
+    costs.hops += result.cost.hops;
+    costs.near += result.cost.near;
+    nearBreakdown.wire1 += result.cost.nearBreakdown?.wire1 ?? 0;
+    nearBreakdown.wire2 += result.cost.nearBreakdown?.wire2 ?? 0;
+    nearBreakdown.obs1 += result.cost.nearBreakdown?.obs1 ?? 0;
+    nearBreakdown.obs2 += result.cost.nearBreakdown?.obs2 ?? 0;
+  });
+
+  return {
+    wires: routedWires,
+    cost: costs,
+    nearBreakdown,
+    failures,
+    settings: opts,
+    durationMs: Date.now() - startTime,
+  };
+}
+
+function connectionKey(conn, idx) {
+  if (conn.key) return String(conn.key);
+  if (conn.id) return String(conn.id);
+  const fromIndex = conn.fromIndex ?? 0;
+  const toIndex = conn.toIndex ?? 0;
+  return `${conn.from}:${fromIndex}->${conn.to}:${toIndex}:${idx}`;
+}
+
+function computeBounds(nodes, obstacles, padding) {
+  let minX = Infinity;
+  let minY = Infinity;
+  let maxX = -Infinity;
+  let maxY = -Infinity;
+  nodes.forEach((node) => {
+    minX = Math.min(minX, node.x);
+    minY = Math.min(minY, node.y);
+    maxX = Math.max(maxX, node.x);
+    maxY = Math.max(maxY, node.y);
+  });
+  obstacles.forEach((obs) => {
+    minX = Math.min(minX, obs.x0);
+    minY = Math.min(minY, obs.y0);
+    maxX = Math.max(maxX, obs.x1);
+    maxY = Math.max(maxY, obs.y1);
+  });
+  if (!isFinite(minX)) {
+    minX = 0;
+    minY = 0;
+    maxX = 0;
+    maxY = 0;
+  }
+  return {
+    minX: minX - padding,
+    minY: minY - padding,
+    maxX: maxX + padding,
+    maxY: maxY + padding,
+  };
+}
+
+function routeSingleConnection({ from, to, obstacles, obstacleGrid, occupancy, bounds, opts, meta }) {
+  const startDir = dirToVector(from.dir);
+  const endDir = dirToVector(to.dir);
+  if (!startDir || !endDir) return emptyResult("bad_direction");
+  const endIncoming = { x: -endDir.x, y: -endDir.y };
+
+  const start = { x: from.x, y: from.y };
+  const end = { x: to.x, y: to.y };
+  const startStep = { x: start.x + startDir.x, y: start.y + startDir.y };
+  const endStep = { x: end.x - endIncoming.x, y: end.y - endIncoming.y };
+  const allowedSet = new Set([
+    pointKeyInt(start.x, start.y),
+    pointKeyInt(end.x, end.y),
+    pointKeyInt(startStep.x, startStep.y),
+    pointKeyInt(endStep.x, endStep.y),
+  ]);
+
+  if (isBlocked(startStep, obstacles, allowedSet, obstacleGrid)) {
+    return emptyResult("blocked_start_step");
+  }
+  if (isBlocked(endStep, obstacles, allowedSet, obstacleGrid)) {
+    return emptyResult("blocked_end_step");
+  }
+
+  const gridW = bounds.maxX - bounds.minX + 1;
+  const gridH = bounds.maxY - bounds.minY + 1;
+  const cellCount = gridW * gridH;
+  const stateCount = cellCount * 8;
+  const gScore = new Float64Array(stateCount);
+  gScore.fill(Number.POSITIVE_INFINITY);
+  const cameFrom = new Int32Array(stateCount);
+  cameFrom.fill(-1);
+  const lenArr = new Int32Array(stateCount);
+  const turnsArr = new Int16Array(stateCount);
+  const hopsArr = new Int16Array(stateCount);
+  const nearArr = new Int32Array(stateCount);
+  const wire1Arr = new Int32Array(stateCount);
+  const wire2Arr = new Int32Array(stateCount);
+  const obs1Arr = new Int32Array(stateCount);
+  const obs2Arr = new Int32Array(stateCount);
+
+  const startDirKey = dirKey(startDir);
+  const endIncomingKey = dirKey(endIncoming);
+  const startDirIdx = dirIndex(startDirKey);
+  const endDirIdx = dirIndex(endIncomingKey);
+  const endIncomingIdx = endDirIdx;
+  const startCell = cellIndex(start.x, start.y, bounds.minX, bounds.minY, gridW);
+  const startIndex = stateIndex(startCell, startDirIdx, 0);
+
+  gScore[startIndex] = 0;
+  const open = new MinHeap();
+  open.push({ idx: startIndex, f: heuristic(start, end) });
+  const searchStart = Date.now();
+
+  while (open.size() > 0) {
+    if (Date.now() - searchStart > opts.maxTimeMs) break;
+    const current = open.pop();
+    const state = decodeState(current.idx, bounds.minX, bounds.minY, gridW);
+    if (state.x === end.x && state.y === end.y && state.dir === endDirIdx) {
+      return buildResultFromArrays(
+        current.idx,
+        cameFrom,
+        {
+          totalArr: gScore,
+          lenArr,
+          turnsArr,
+          hopsArr,
+          nearArr,
+          wire1Arr,
+          wire2Arr,
+          obs1Arr,
+          obs2Arr,
+        },
+        bounds.minX,
+        bounds.minY,
+        gridW
+      );
+    }
+    const currentStats = {
+      length: lenArr[current.idx],
+      turns: turnsArr[current.idx],
+      hops: hopsArr[current.idx],
+      near: nearArr[current.idx],
+      nearBreakdown: {
+        wire1: wire1Arr[current.idx],
+        wire2: wire2Arr[current.idx],
+        obs1: obs1Arr[current.idx],
+        obs2: obs2Arr[current.idx],
+      },
+    };
+
+    const neighbors = expandNeighborsFast(
+      state,
+      start,
+      end,
+      startStep,
+      endStep,
+      endIncomingIdx,
+      occupancy,
+      obstacles,
+      obstacleGrid,
+      bounds,
+      opts,
+      currentStats,
+      meta,
+      allowedSet
+    );
+    for (let i = 0; i < neighbors.length; i += 1) {
+      const next = neighbors[i];
+      const cell = cellIndex(next.state.x, next.state.y, bounds.minX, bounds.minY, gridW);
+      const nextIdx = stateIndex(cell, next.state.dir, next.state.hopLock);
+      const tentative = next.cost.total;
+      if (tentative < gScore[nextIdx]) {
+        cameFrom[nextIdx] = current.idx;
+        gScore[nextIdx] = tentative;
+        lenArr[nextIdx] = next.cost.length;
+        turnsArr[nextIdx] = next.cost.turns;
+        hopsArr[nextIdx] = next.cost.hops;
+        nearArr[nextIdx] = next.cost.near;
+        wire1Arr[nextIdx] = next.cost.nearBreakdown.wire1;
+        wire2Arr[nextIdx] = next.cost.nearBreakdown.wire2;
+        obs1Arr[nextIdx] = next.cost.nearBreakdown.obs1;
+        obs2Arr[nextIdx] = next.cost.nearBreakdown.obs2;
+        open.push({
+          idx: nextIdx,
+          f: tentative + heuristic(next.state, end),
+        });
+      }
+    }
+  }
+  if (Date.now() - searchStart > opts.maxTimeMs) {
+    return emptyResult("timeout");
+  }
+  return emptyResult("no_path");
+}
+
+function expandNeighborsFast(
+  state,
+  start,
+  end,
+  startStep,
+  endStep,
+  endIncomingIdx,
+  occupancy,
+  obstacles,
+  obstacleGrid,
+  bounds,
+  opts,
+  currentStats,
+  meta,
+  allowedSet
+) {
+  const dirs = [
+    { x: 1, y: 0, idx: 0 },
+    { x: -1, y: 0, idx: 1 },
+    { x: 0, y: 1, idx: 2 },
+    { x: 0, y: -1, idx: 3 },
+  ];
+  const results = [];
+  dirs.forEach((dir) => {
+    if (state.hopLock > 0 && dir.idx !== state.dir) return;
+    if (state.x === start.x && state.y === start.y && dir.idx !== state.dir) return;
+    const nx = state.x + dir.x;
+    const ny = state.y + dir.y;
+    if (nx < bounds.minX || nx > bounds.maxX || ny < bounds.minY || ny > bounds.maxY) return;
+    const nextPoint = { x: nx, y: ny };
+
+    if (nx === end.x && ny === end.y && dir.idx !== endIncomingIdx) return;
+    if (nx === end.x && ny === end.y && (state.x !== endStep.x || state.y !== endStep.y)) return;
+    if (isBlocked(nextPoint, obstacles, allowedSet, obstacleGrid)) return;
+    if (occupancyEdgeBlocked(state, nextPoint, occupancy, allowedSet, meta)) return;
+    const edgeKey = edgeKeyFor(state, nextPoint);
+    const edgeOccupied = occupancy.edges.has(edgeKey);
+
+    const occInfo = occupancyPointInfo(nextPoint, occupancy, allowedSet, meta);
+    let nextHopLock = Math.max(state.hopLock - 1, 0);
+    let hopCost = 0;
+    if (occInfo.occupied) {
+      const crossesVertical = occInfo.vertical && (dir.x !== 0);
+      const crossesHorizontal = occInfo.horizontal && (dir.y !== 0);
+      if (crossesVertical || crossesHorizontal) {
+        nextHopLock = Math.max(nextHopLock, 1);
+        hopCost = opts.hopCost;
+      } else {
+        return;
+      }
+    }
+
+    const turnCost = state.dir !== dir.idx ? opts.turnCost : 0;
+    const nearData = proximityPenalty(nextPoint, obstacleGrid, occupancy, opts, meta, currentStats, end);
+    results.push({
+      state: {
+        x: nx,
+        y: ny,
+        dir: dir.idx,
+        hopLock: nextHopLock,
+      },
+      cost: buildCost(currentStats, opts, {
+        turnCost,
+        hopCost,
+        nearBreakdown: nearData.breakdown,
+        nearCost: nearData.cost,
+        lengthIncrement: edgeOccupied ? 0 : 1,
+      }),
+    });
+  });
+  return results;
+}
+
+function buildResultFromArrays(endIdx, cameFrom, statsArrays, minX, minY, gridW) {
+  const path = [];
+  let currentIdx = endIdx;
+  while (currentIdx >= 0) {
+    const state = decodeState(currentIdx, minX, minY, gridW);
+    path.push({ x: state.x, y: state.y });
+    currentIdx = cameFrom[currentIdx];
+  }
+  path.reverse();
+  const stats = {
+    total: statsArrays.totalArr ? statsArrays.totalArr[endIdx] : 0,
+    length: statsArrays.lenArr[endIdx] ?? 0,
+    turns: statsArrays.turnsArr[endIdx] ?? 0,
+    hops: statsArrays.hopsArr[endIdx] ?? 0,
+    near: statsArrays.nearArr[endIdx] ?? 0,
+    nearBreakdown: {
+      wire1: statsArrays.wire1Arr[endIdx] ?? 0,
+      wire2: statsArrays.wire2Arr[endIdx] ?? 0,
+      obs1: statsArrays.obs1Arr[endIdx] ?? 0,
+      obs2: statsArrays.obs2Arr[endIdx] ?? 0,
+    },
+  };
+  stats.total = stats.total || stats.length + stats.turns + stats.hops + stats.near;
+  return { points: path, cost: stats };
+}
+
+function proximityPenalty(point, obstacleGrid, occupancy, opts, meta, currentStats, end) {
+  let wire1 = 0;
+  let wire2 = 0;
+  let obs1 = 0;
+  let obs2 = 0;
+
+  const neighbors1 = [
+    { x: point.x + 1, y: point.y },
+    { x: point.x - 1, y: point.y },
+    { x: point.x, y: point.y + 1 },
+    { x: point.x, y: point.y - 1 },
+  ];
+  const neighbors2 = [
+    { x: point.x + 2, y: point.y },
+    { x: point.x - 2, y: point.y },
+    { x: point.x, y: point.y + 2 },
+    { x: point.x, y: point.y - 2 },
+    { x: point.x + 1, y: point.y + 1 },
+    { x: point.x + 1, y: point.y - 1 },
+    { x: point.x - 1, y: point.y + 1 },
+    { x: point.x - 1, y: point.y - 1 },
+  ];
+
+  const isWireNear = (target) => {
+    const info = occupancy.points.get(pointKey(target));
+    if (!info || !info.wireIds) return false;
+    if (meta && info.owners && (info.owners.has(meta.from) || info.owners.has(meta.to))) return false;
+    return true;
+  };
+
+  if (neighbors1.some((target) => isWireNear(target))) {
+    wire1 = 1;
+  } else if (neighbors2.some((target) => isWireNear(target))) {
+    wire2 = 1;
+  }
+
+  if (obstacleGrid) {
+    const obsNear = obstacleNear(point, obstacleGrid);
+    obs1 = obsNear.obs1;
+    obs2 = obsNear.obs2;
+  }
+
+  const cost =
+    wire1 * opts.nearWirePenalty1 +
+    wire2 * opts.nearWirePenalty2 +
+    obs1 * opts.nearObstaclePenalty1 +
+    obs2 * opts.nearObstaclePenalty2;
+
+  return {
+    cost,
+    breakdown: { wire1, wire2, obs1, obs2 },
+  };
+}
+
+function buildCost(
+  currentStats,
+  opts,
+  { turnCost, hopCost, nearCost, nearBreakdown, lengthIncrement }
+) {
+  const length = currentStats.length + (lengthIncrement ?? 1);
+  const turns = currentStats.turns + (turnCost ? 1 : 0);
+  const hops = currentStats.hops + (hopCost ? 1 : 0);
+  const near = currentStats.near + nearCost;
+
+  const wire1 = (currentStats.nearBreakdown?.wire1 ?? 0) + (nearBreakdown?.wire1 ?? 0);
+  const wire2 = (currentStats.nearBreakdown?.wire2 ?? 0) + (nearBreakdown?.wire2 ?? 0);
+  const obs1 = (currentStats.nearBreakdown?.obs1 ?? 0) + (nearBreakdown?.obs1 ?? 0);
+  const obs2 = (currentStats.nearBreakdown?.obs2 ?? 0) + (nearBreakdown?.obs2 ?? 0);
+
+  const total = length * opts.lengthCost + turns * opts.turnCost + hops * opts.hopCost + near;
+  return {
+    total,
+    length,
+    turns,
+    hops,
+    near,
+    nearBreakdown: { wire1, wire2, obs1, obs2 },
+  };
+}
+
+function emptyResult(reason) {
+  return { points: [], cost: { total: 0, length: 0, turns: 0, hops: 0, near: 0 }, reason };
+}
+
+function heuristic(point, end) {
+  return Math.abs(point.x - end.x) + Math.abs(point.y - end.y);
+}
+
+function dirToVector(dir) {
+  if (!dir) return null;
+  if (dir === "right" || dir === 0) return { x: 1, y: 0 };
+  if (dir === "left" || dir === 180) return { x: -1, y: 0 };
+  if (dir === "down" || dir === 90) return { x: 0, y: 1 };
+  if (dir === "up" || dir === 270) return { x: 0, y: -1 };
+  return null;
+}
+
+function dirKey(dir) {
+  if (dir.x === 1 && dir.y === 0) return "r";
+  if (dir.x === -1 && dir.y === 0) return "l";
+  if (dir.x === 0 && dir.y === 1) return "d";
+  if (dir.x === 0 && dir.y === -1) return "u";
+  return "";
+}
+
+function dirIndex(key) {
+  if (key === "r") return 0;
+  if (key === "l") return 1;
+  if (key === "d") return 2;
+  if (key === "u") return 3;
+  return 0;
+}
+
+function cellIndex(x, y, minX, minY, gridW) {
+  return (y - minY) * gridW + (x - minX);
+}
+
+function stateIndex(cell, dirIdx, hopLock) {
+  return (cell * 4 + dirIdx) * 2 + hopLock;
+}
+
+function decodeState(idx, minX, minY, gridW) {
+  const cell = Math.floor(idx / 8);
+  const rem = idx - cell * 8;
+  const dir = Math.floor(rem / 2);
+  const hopLock = rem % 2;
+  const x = (cell % gridW) + minX;
+  const y = Math.floor(cell / gridW) + minY;
+  return { x, y, dir, hopLock };
+}
+
+
+function isBlocked(point, obstacles, allowedSet, obstacleGrid) {
+  if (allowedSet.has(pointKeyInt(point.x, point.y))) return false;
+  if (obstacleGrid) {
+    return obstacleGrid.has(pointKeyInt(point.x, point.y));
+  }
+  return obstacles.some(
+    (obs) => point.x >= obs.x0 && point.x <= obs.x1 && point.y >= obs.y0 && point.y <= obs.y1
+  );
+}
+
+function buildOccupancy(wires) {
+  const points = new Map();
+  const edges = new Map();
+  wires.forEach((wire) => occupancyAddWire({ points, edges }, wire.points, wire.meta));
+  return { points, edges };
+}
+
+function occupancyAddWire(occupancy, points, meta) {
+  const ownerIds = meta ? new Set([meta.from, meta.to]) : new Set();
+  const wireIds = meta && meta.key ? new Set([meta.key]) : new Set();
+  for (let i = 0; i < points.length; i += 1) {
+    const key = pointKey(points[i]);
+    const info =
+      occupancy.points.get(key) ??
+      { horizontal: false, vertical: false, occupied: false, owners: new Set(), wireIds: new Set() };
+    info.occupied = true;
+    ownerIds.forEach((id) => info.owners.add(id));
+    wireIds.forEach((id) => info.wireIds.add(id));
+    occupancy.points.set(key, info);
+    if (i > 0) {
+      const prev = points[i - 1];
+      const curr = points[i];
+      const edgeKey = edgeKeyFor(prev, curr);
+      const edgeOwners = occupancy.edges.get(edgeKey) ?? new Set();
+      ownerIds.forEach((id) => edgeOwners.add(id));
+      if (meta && meta.key) edgeOwners.add(meta.key);
+      occupancy.edges.set(edgeKey, edgeOwners);
+      if (i < points.length - 1) {
+        const next = points[i + 1];
+        if (prev.x === curr.x && curr.x === next.x) info.vertical = true;
+        if (prev.y === curr.y && curr.y === next.y) info.horizontal = true;
+      }
+    }
+  }
+}
+
+function occupancyEdgeBlocked(from, to, occupancy, allowedSet, meta) {
+  if (allowedSet.has(pointKeyInt(from.x, from.y)) || allowedSet.has(pointKeyInt(to.x, to.y))) return false;
+  const edgeKey = edgeKeyFor(from, to);
+  const owners = occupancy.edges.get(edgeKey);
+  if (!owners) return false;
+  if (meta && (owners.has(meta.from) || owners.has(meta.to) || owners.has(meta.key))) return false;
+  return true;
+}
+
+function occupancyPointInfo(point, occupancy, allowedSet, meta) {
+  if (allowedSet.has(pointKeyInt(point.x, point.y))) {
+    return { occupied: false, horizontal: false, vertical: false, owners: new Set(), wireIds: new Set() };
+  }
+  const info = occupancy.points.get(pointKey(point));
+  if (!info) return { occupied: false, horizontal: false, vertical: false, owners: new Set(), wireIds: new Set() };
+  if (meta && (info.owners.has(meta.from) || info.owners.has(meta.to) || info.wireIds.has(meta.key))) {
+    return { occupied: false, horizontal: false, vertical: false, owners: info.owners, wireIds: info.wireIds };
+  }
+  return info;
+}
+
+function buildObstacleGrid(obstacles) {
+  if (!obstacles.length) return null;
+  const grid = new Set();
+  obstacles.forEach((obs) => {
+    for (let x = Math.floor(obs.x0); x <= Math.floor(obs.x1); x += 1) {
+      for (let y = Math.floor(obs.y0); y <= Math.floor(obs.y1); y += 1) {
+        grid.add(pointKeyInt(x, y));
+      }
+    }
+  });
+  return grid;
+}
+
+function obstacleNear(point, grid) {
+  if (grid.has(pointKeyInt(point.x, point.y))) return { obs1: 1, obs2: 0 };
+  const neighbors1 = [
+    { x: point.x + 1, y: point.y },
+    { x: point.x - 1, y: point.y },
+    { x: point.x, y: point.y + 1 },
+    { x: point.x, y: point.y - 1 },
+  ];
+  if (neighbors1.some((pt) => grid.has(pointKeyInt(pt.x, pt.y)))) {
+    return { obs1: 1, obs2: 0 };
+  }
+  const neighbors2 = [
+    { x: point.x + 2, y: point.y },
+    { x: point.x - 2, y: point.y },
+    { x: point.x, y: point.y + 2 },
+    { x: point.x, y: point.y - 2 },
+    { x: point.x + 1, y: point.y + 1 },
+    { x: point.x + 1, y: point.y - 1 },
+    { x: point.x - 1, y: point.y + 1 },
+    { x: point.x - 1, y: point.y - 1 },
+  ];
+  if (neighbors2.some((pt) => grid.has(pointKeyInt(pt.x, pt.y)))) {
+    return { obs1: 0, obs2: 1 };
+  }
+  return { obs1: 0, obs2: 0 };
+}
+
+function pointKey(point) {
+  return `${point.x},${point.y}`;
+}
+
+function pointKeyInt(x, y) {
+  return ((x & 0xffff) << 16) | (y & 0xffff);
+}
+
+function edgeKeyFor(a, b) {
+  if (a.x === b.x) {
+    const y0 = Math.min(a.y, b.y);
+    const y1 = Math.max(a.y, b.y);
+    return `v:${a.x}:${y0}:${y1}`;
+  }
+  const x0 = Math.min(a.x, b.x);
+  const x1 = Math.max(a.x, b.x);
+  return `h:${x0}:${x1}:${a.y}`;
+}
+
+class MinHeap {
+  constructor() {
+    this.items = [];
+  }
+
+  size() {
+    return this.items.length;
+  }
+
+  push(item) {
+    this.items.push(item);
+    this.bubbleUp(this.items.length - 1);
+  }
+
+  pop() {
+    if (this.items.length === 1) return this.items.pop();
+    const top = this.items[0];
+    this.items[0] = this.items.pop();
+    this.bubbleDown(0);
+    return top;
+  }
+
+  bubbleUp(index) {
+    let idx = index;
+    while (idx > 0) {
+      const parent = Math.floor((idx - 1) / 2);
+      if (this.items[parent].f <= this.items[idx].f) break;
+      [this.items[parent], this.items[idx]] = [this.items[idx], this.items[parent]];
+      idx = parent;
+    }
+  }
+
+  bubbleDown(index) {
+    let idx = index;
+    const length = this.items.length;
+    while (true) {
+      const left = idx * 2 + 1;
+      const right = idx * 2 + 2;
+      let smallest = idx;
+      if (left < length && this.items[left].f < this.items[smallest].f) smallest = left;
+      if (right < length && this.items[right].f < this.items[smallest].f) smallest = right;
+      if (smallest === idx) break;
+      [this.items[smallest], this.items[idx]] = [this.items[idx], this.items[smallest]];
+      idx = smallest;
+    }
+  }
+}
 
 export function routeAllConnections(
   state,
   width,
   height,
   offset = { x: 0, y: 0 },
-  timeLimitMs = ROUTE_TIME_LIMIT_MS,
-  preferTwoTurn = USE_TWO_TURN_SHORTCUT
+  timeLimitMs
 ) {
-  const startTime = typeof performance !== "undefined" ? performance.now() : Date.now();
-  const baseSegments = new Map();
-  const orderedSegments = new Map();
-  const penaltyMap = new Map();
-  const blockedEdges = new Set();
-  const edgesByPort = new Map();
-  const connOrder = new Map();
-  const occupiedNodes = new Map();
-
-  state.connections.forEach((conn, index) => {
-    connOrder.set(conn, index);
-  });
-
-  const routingList = [...state.connections].sort((a, b) => {
-    const lenA = estimateConnLength(state, a);
-    const lenB = estimateConnLength(state, b);
-    if (lenA !== lenB) return lenA - lenB;
-    return (connOrder.get(a) ?? 0) - (connOrder.get(b) ?? 0);
-  });
-
-  if (DEBUG_ROUTE) {
-    console.debug(`[router] routing ${state.connections.length} connections`);
-  }
-
-  const portLaneCounts = new Map();
-  const nextLaneIndex = (id, type, index) => {
-    const key = portKey(id, type, index);
-    const count = portLaneCounts.get(key) || 0;
-    portLaneCounts.set(key, count + 1);
-    return count;
+  const { nodes, connections, obstacles } = buildRouter2Input(state);
+  const settings = {
+    maxTimeMs: timeLimitMs ?? 400,
+    incremental: false,
+    fullOptimize: true,
+    searchPadding: Math.max(20, Math.ceil(Math.max(width, height) / GRID_SIZE) + 5),
+    nearObstaclePenalty1: 10,
+    nearObstaclePenalty2: 4,
+    nearWirePenalty1: 6,
+    nearWirePenalty2: 2,
   };
-
-  routingList.forEach((conn) => {
-    const fromLane = nextLaneIndex(conn.from, "out", conn.fromIndex ?? 0);
-    const toLane = nextLaneIndex(conn.to, "in", conn.toIndex);
-    const points = routeSingle(
-      conn,
-      state,
-      width,
-      height,
-      offset,
-      penaltyMap,
-      blockedEdges,
-      edgesByPort,
-      occupiedNodes,
-      fromLane,
-      toLane,
-      timeLimitMs,
-      preferTwoTurn
-    );
-    conn.points = points;
-    baseSegments.set(conn, pointsToSegments(points));
-    orderedSegments.set(conn, segmentsFromPoints(points));
-    addPenaltyFromRoute(points, width, height, penaltyMap);
-    addNodePenaltyFromRoute(points, width, height, penaltyMap);
-    addEdgesFromPoints(points, blockedEdges);
-    addStubEdgesForPort(points, edgesByPort, conn.from, "out", conn.fromIndex ?? 0, true);
-    addStubEdgesForPort(points, edgesByPort, conn.to, "in", conn.toIndex, false);
-    addOccupiedNodes(points, occupiedNodes);
-  });
-
-  const allSegments = [];
-  const connSegments = new Map();
-
-  state.connections.forEach((conn) => {
-    const segs = orderedSegments.get(conn) || [];
-    connSegments.set(conn, segs);
-    const normalized = baseSegments.get(conn) || [];
-    const sharedFrom = (a, b) => a.from === b.from && (a.fromIndex ?? 0) === (b.fromIndex ?? 0);
-    const sharedTo = (a, b) => a.to === b.to && a.toIndex === b.toIndex;
-    const samePort = (a, b) => sharedFrom(a, b) || sharedTo(a, b);
-    allSegments.push(
-      ...normalized.map((s) => ({ ...s, conn, samePort }))
-    );
-  });
-
-  const paths = new Map();
-  state.connections.forEach((conn) => {
-    const segs = connSegments.get(conn) || [];
-    const order = connOrder.get(conn) ?? 0;
-    const others = allSegments.filter(
-      (s) => s.conn !== conn && !s.samePort(conn, s.conn) && (connOrder.get(s.conn) ?? 0) < order
-    );
-    paths.set(conn, buildPathWithHops(segs, others));
-    conn.points = buildPointsWithHops(conn.points, others);
-  });
-
-  if (DEBUG_ROUTE) {
-    const endTime = typeof performance !== "undefined" ? performance.now() : Date.now();
-    console.debug(`[router] complete in ${(endTime - startTime).toFixed(1)}ms`);
-  }
-
-  return paths;
-}
-
-export function routeDirtyConnections(
-  state,
-  width,
-  height,
-  offset = { x: 0, y: 0 },
-  dirtyConnections = new Set(),
-  timeLimitMs = ROUTE_TIME_LIMIT_MS,
-  preferTwoTurn = USE_TWO_TURN_SHORTCUT
-) {
-  if (!dirtyConnections || dirtyConnections.size === 0) return new Map();
-  const startTime = typeof performance !== "undefined" ? performance.now() : Date.now();
-  const baseSegments = new Map();
-  const orderedSegments = new Map();
-  const penaltyMap = new Map();
-  const blockedEdges = new Set();
-  const edgesByPort = new Map();
-  const connOrder = new Map();
-  const occupiedNodes = new Map();
-
-  state.connections.forEach((conn, index) => {
-    connOrder.set(conn, index);
-  });
-
-  const routingList = [...state.connections].sort((a, b) => {
-    const lenA = estimateConnLength(state, a);
-    const lenB = estimateConnLength(state, b);
-    if (lenA !== lenB) return lenA - lenB;
-    return (connOrder.get(a) ?? 0) - (connOrder.get(b) ?? 0);
-  });
-
-  const portLaneCounts = new Map();
-  const nextLaneIndex = (id, type, index) => {
-    const key = portKey(id, type, index);
-    const count = portLaneCounts.get(key) || 0;
-    portLaneCounts.set(key, count + 1);
-    return count;
-  };
-
-  state.connections.forEach((conn) => {
-    if (dirtyConnections.has(conn)) return;
-    const points = conn.points || [];
-    if (points.length < 2) return;
-    baseSegments.set(conn, pointsToSegments(points));
-    orderedSegments.set(conn, segmentsFromPoints(points));
-    addPenaltyFromRoute(points, width, height, penaltyMap);
-    addNodePenaltyFromRoute(points, width, height, penaltyMap);
-    addEdgesFromPoints(points, blockedEdges);
-    addStubEdgesForPort(points, edgesByPort, conn.from, "out", conn.fromIndex ?? 0, true);
-    addStubEdgesForPort(points, edgesByPort, conn.to, "in", conn.toIndex, false);
-    addOccupiedNodes(points, occupiedNodes);
-  });
-
-  routingList.forEach((conn) => {
-    const fromLane = nextLaneIndex(conn.from, "out", conn.fromIndex ?? 0);
-    const toLane = nextLaneIndex(conn.to, "in", conn.toIndex);
-    if (!dirtyConnections.has(conn)) return;
-    const points = routeSingle(
-      conn,
-      state,
-      width,
-      height,
-      offset,
-      penaltyMap,
-      blockedEdges,
-      edgesByPort,
-      occupiedNodes,
-      fromLane,
-      toLane,
-      timeLimitMs,
-      preferTwoTurn
-    );
-    conn.points = points;
-    baseSegments.set(conn, pointsToSegments(points));
-    orderedSegments.set(conn, segmentsFromPoints(points));
-    addPenaltyFromRoute(points, width, height, penaltyMap);
-    addNodePenaltyFromRoute(points, width, height, penaltyMap);
-    addEdgesFromPoints(points, blockedEdges);
-    addStubEdgesForPort(points, edgesByPort, conn.from, "out", conn.fromIndex ?? 0, true);
-    addStubEdgesForPort(points, edgesByPort, conn.to, "in", conn.toIndex, false);
-    addOccupiedNodes(points, occupiedNodes);
-  });
-
-  const allSegments = [];
-  state.connections.forEach((conn) => {
-    const normalized = baseSegments.get(conn) || [];
-    const sharedFrom = (a, b) => a.from === b.from && (a.fromIndex ?? 0) === (b.fromIndex ?? 0);
-    const sharedTo = (a, b) => a.to === b.to && a.toIndex === b.toIndex;
-    const samePort = (a, b) => sharedFrom(a, b) || sharedTo(a, b);
-    allSegments.push(...normalized.map((s) => ({ ...s, conn, samePort })));
-  });
-
-  const paths = new Map();
-  dirtyConnections.forEach((conn) => {
-    const segs = orderedSegments.get(conn) || [];
-    const order = connOrder.get(conn) ?? 0;
-    const others = allSegments.filter(
-      (s) => s.conn !== conn && !s.samePort(conn, s.conn) && (connOrder.get(s.conn) ?? 0) < order
-    );
-    paths.set(conn, buildPathWithHops(segs, others));
-    conn.points = buildPointsWithHops(conn.points || [], others);
-  });
-
-  if (DEBUG_ROUTE) {
-    const endTime = typeof performance !== "undefined" ? performance.now() : Date.now();
-    console.debug(`[router] dirty routing ${dirtyConnections.size} connections in ${(endTime - startTime).toFixed(1)}ms`);
-  }
-
-  return paths;
-}
-
-function estimateConnLength(state, conn) {
-  const fromBlock = state.blocks.get(conn.from);
-  const toBlock = state.blocks.get(conn.to);
-  if (!fromBlock || !toBlock) return Infinity;
-  const fromIndex = conn.fromIndex ?? 0;
-  const fromPort = fromBlock.ports.find((p) => p.type === "out" && p.index === fromIndex);
-  const toPort = toBlock.ports.find((p) => p.type === "in" && p.index === conn.toIndex);
-  if (!fromPort || !toPort) return Infinity;
-  const from = rotatePoint({ x: fromBlock.x + fromPort.x, y: fromBlock.y + fromPort.y }, fromBlock);
-  const to = rotatePoint({ x: toBlock.x + toPort.x, y: toBlock.y + toPort.y }, toBlock);
-  return Math.abs(from.x - to.x) + Math.abs(from.y - to.y);
-}
-
-function routeSingle(
-  conn,
-  state,
-  width,
-  height,
-  offset,
-  penaltyMap,
-  blockedEdges,
-  edgesByPort,
-  occupiedNodes,
-  fromLane = 0,
-  toLane = 0,
-  timeLimitMs = ROUTE_TIME_LIMIT_MS,
-  preferTwoTurn = true
-) {
-  const fromBlock = state.blocks.get(conn.from);
-  const toBlock = state.blocks.get(conn.to);
-  if (!fromBlock || !toBlock) return [];
-
-  const fromIndex = conn.fromIndex ?? 0;
-  const fromPort = fromBlock.ports.find((p) => p.type === "out" && p.index === fromIndex);
-  const toPort = toBlock.ports.find((p) => p.type === "in" && p.index === conn.toIndex);
-  if (!fromPort || !toPort) return [];
-
-  const from = rotatePoint({ x: fromBlock.x + fromPort.x, y: fromBlock.y + fromPort.y }, fromBlock);
-  const to = rotatePoint({ x: toBlock.x + toPort.x, y: toBlock.y + toPort.y }, toBlock);
-
-  const blocks = Array.from(state.blocks.values());
-  const obstacles = blocks.map((b) => {
-    const pad = b.id === fromBlock.id || b.id === toBlock.id ? 0 : KEEP_OUT;
-    const bounds = b.id === fromBlock.id || b.id === toBlock.id ? getBlockBodyBounds(b) : getBlockBounds(b);
-    return expandRect(bounds, pad);
-  });
-
-  const fromKeepout = expandRect(getBlockBounds(fromBlock), KEEP_OUT);
-  const toKeepout = expandRect(getBlockBounds(toBlock), KEEP_OUT);
-
-  const fromSide = getPortSide(fromBlock, fromPort, from);
-  const toSide = getPortSide(toBlock, toPort, to);
-  const startDir = sideToDir(fromSide, "out");
-  const endDir = sideToDir(toSide, "in");
-  const fromAnchor = snapAnchor(
-    anchorFromPort(from, fromSide, fromPort.index ?? 0, fromLane)
-  );
-  const toAnchor = snapAnchor(
-    anchorFromPort(to, toSide, toPort.index ?? 0, toLane)
-  );
-  const fromStub = stubPointFromPort(from, fromSide);
-  const toStub = stubPointFromPort(to, toSide);
-
-  const penaltyFn = penaltyMap ? (x, y) => penaltyMap.get(`${x},${y}`) || 0 : null;
-  let window = computeRouteWindow(fromAnchor, toAnchor, obstacles, width, height);
-  const runRoute = (win, penalty, edges, edgeBlockFn, allowed) => {
-    const crossPenalty = buildCrossPenalty(occupiedNodes, win.offset, win.width, win.height);
-    const edgePenalty = buildEdgePenalty(edges, COST.edgeOverlap, allowed, win.offset, win.width, win.height);
-    const fromShift = { x: fromAnchor.x - win.offset.x, y: fromAnchor.y - win.offset.y };
-    const toShift = { x: toAnchor.x - win.offset.x, y: toAnchor.y - win.offset.y };
-    const shifted = win.obstacles.map((rect) => ({
-      left: rect.left - win.offset.x,
-      right: rect.right - win.offset.x,
-      top: rect.top - win.offset.y,
-      bottom: rect.bottom - win.offset.y,
-    }));
-    return routeOrthogonal(
-      fromShift,
-      toShift,
-      shifted,
-      win.width,
-      win.height,
-      penalty,
-      COST.turn,
-      timeLimitMs,
-      edgePenalty,
-      crossPenalty,
-      edgeBlockFn,
-      startDir,
-      endDir
-    );
-  };
-  const allowedEdges = allowedEdgeSet(edgesByPort, conn);
-  const twoTurnCore = preferTwoTurn
-    ? findTwoTurnPathAllowed(fromAnchor, toAnchor, obstacles, blockedEdges, allowedEdges)
-    : null;
-  const runWithEdges = (allowed, overrideWindow = null) => {
-    let win = overrideWindow || window;
-    const edgeBlockFn = buildEdgeBlocker(blockedEdges, allowed, win.offset, win.width, win.height);
-    let localEdges = toLocalEdges(blockedEdges, win.offset, win.width, win.height);
-    let routed = runRoute(win, penaltyFn, localEdges, edgeBlockFn, allowed);
-    let usedFallback = !routed || routed.length === 0;
-    if (usedFallback && win.usedLocal) {
-      win = computeRouteWindow(fromAnchor, toAnchor, obstacles, width, height, GRID_SIZE * 90);
-      localEdges = toLocalEdges(blockedEdges, win.offset, win.width, win.height);
-      const localBlock = buildEdgeBlocker(blockedEdges, allowed, win.offset, win.width, win.height);
-      routed = runRoute(win, penaltyFn, localEdges, localBlock, allowed);
-      usedFallback = !routed || routed.length === 0;
-    }
-    if (usedFallback && win.usedLocal) {
-      const globalWindow = {
-        offset: offset,
-        width,
-        height,
-        obstacles,
-        usedLocal: false,
-      };
-      const globalBlock = buildEdgeBlocker(blockedEdges, allowed, offset, width, height);
-      routed = runRoute(globalWindow, penaltyFn, blockedEdges, globalBlock, allowed);
-      usedFallback = !routed || routed.length === 0;
-      win = globalWindow;
-    }
-    if (usedFallback) {
-      const boostedPenalty = penaltyFn ? (x, y) => (penaltyFn(x, y) || 0) * 8 : null;
-      const localBlock = buildEdgeBlocker(blockedEdges, allowed, win.offset, win.width, win.height);
-      routed = runRoute(win, boostedPenalty, null, localBlock, allowed);
-      usedFallback = !routed || routed.length === 0;
-    }
-    return { routed, usedFallback, window: win };
-  };
-
-  let routed = null;
-  let usedFallback = false;
-  if (!twoTurnCore) {
-    let result = runWithEdges(allowedEdges);
-    routed = result.routed;
-    usedFallback = result.usedFallback;
-    window = result.window;
-  }
-
-  const locked = new Set(
-    [
-      { x: snap(from.x), y: snap(from.y) },
-      { x: snap(fromStub.x), y: snap(fromStub.y) },
-      { x: snap(fromAnchor.x), y: snap(fromAnchor.y) },
-      { x: snap(toAnchor.x), y: snap(toAnchor.y) },
-      { x: snap(toStub.x), y: snap(toStub.y) },
-      { x: snap(to.x), y: snap(to.y) },
-    ].map(pointKey)
-  );
-
-  let coreWorld = twoTurnCore || null;
-  if (!coreWorld && !usedFallback && routed && routed.length > 0) {
-    const routeOffset = window.usedLocal ? window.offset : offset;
-    coreWorld = routed.map((pt) => ({ x: pt.x + routeOffset.x, y: pt.y + routeOffset.y }));
-  }
-
-  const basePoints = buildPointsFromCore(
-    from,
-    fromStub,
-    fromAnchor,
-    coreWorld,
-    toAnchor,
-    toStub,
-    to
-  );
-  let simplified = finalizePoints(
-    basePoints,
-    locked,
-    fromSide,
-    toSide,
+  const result = routeConnections2({
+    nodes,
+    connections,
     obstacles,
-    blockedEdges,
-    allowedEdges
-  );
-  let minimalTurns = null;
-  if (CHECK_TURN_OPTIMALITY) {
-    const minimalCore = computeMinimalTurnCore(
-      fromAnchor,
-      toAnchor,
+    settings,
+  });
+  if (typeof window !== "undefined") {
+    window.__routerLast = {
+      nodes,
+      connections,
       obstacles,
-      blockedEdges,
-      allowedEdges,
-      window,
-      offset,
-      width,
-      height,
-      startDir,
-      endDir
-    );
-    if (minimalCore) {
-      const altPoints = buildPointsFromCore(
-        from,
-        fromStub,
-        fromAnchor,
-        minimalCore,
-        toAnchor,
-        toStub,
-        to
-      );
-      const altSimplified = finalizePoints(
-        altPoints,
-        locked,
-        fromSide,
-        toSide,
-        obstacles,
-        blockedEdges,
-        allowedEdges
-      );
-      minimalTurns = countTurns(altSimplified);
-      const currentTurns = countTurns(simplified);
-      if (minimalTurns < currentTurns) {
-        simplified = altSimplified;
-      }
-    }
-    const actualTurns = countTurns(simplified);
-    if (Number.isFinite(minimalTurns) && minimalTurns > actualTurns) {
-      minimalTurns = actualTurns;
-    }
-    conn.turnCheck = {
-      actual: actualTurns,
-      minimal: minimalTurns,
+      result,
+      settings,
     };
   }
-  if (DEBUG_ROUTE) {
-    const stats = getRouteStats(simplified);
-    console.debug(
-      `[router] ${conn.from}->${conn.to} fallback=${usedFallback} turns=${stats.turns} len=${stats.length}`
-    );
-  }
-  if (DEBUG_ROUTE && usedFallback) {
-    console.warn(`[router] fallback route for ${conn.from}->${conn.to}`);
-  }
-  return simplified;
+  return applyRouter2Result(state, connections, result);
 }
 
-function trimOutwardRuns(points, fromSide, toSide, obstacles, blockedEdges, allowedEdges) {
-  if (!points || points.length < 4) return points;
-  const trimmedStart = trimOutwardRun(points, fromSide, obstacles, blockedEdges, allowedEdges);
-  const reversed = trimmedStart.slice().reverse();
-  const trimmedEnd = trimOutwardRun(
-    reversed,
-    toSide,
-    obstacles,
-    blockedEdges,
-    allowedEdges
-  ).reverse();
-  return trimmedEnd;
-}
-
-function finalizePoints(points, locked, fromSide, toSide, obstacles, blockedEdges, allowedEdges) {
-  const snapped = points.map((pt) => ({ x: snap(pt.x), y: snap(pt.y) }));
-  let simplified = simplifyPointsLocked(snapped, locked);
-  const trimmed = trimOutwardRuns(simplified, fromSide, toSide, obstacles, blockedEdges, allowedEdges);
-  if (trimmed !== simplified) {
-    simplified = simplifyPointsLocked(trimmed, locked);
-  }
-  return simplified;
-}
-
-function buildPointsFromCore(from, fromStub, fromAnchor, coreWorld, toAnchor, toStub, to) {
-  const points = [from];
-  appendOrth(points, from, fromStub);
-  appendOrth(points, fromStub, fromAnchor);
-  if (coreWorld && coreWorld.length > 1) {
-    const coreTrimmed = coreWorld.slice(1, -1);
-    coreTrimmed.forEach((pt) => appendOrth(points, points[points.length - 1], pt));
-  } else {
-    appendOrth(points, fromAnchor, toAnchor);
-  }
-  appendOrth(points, points[points.length - 1], toAnchor);
-  appendOrth(points, points[points.length - 1], toStub);
-  appendOrth(points, points[points.length - 1], to);
-  return points;
-}
-
-function computeMinimalTurnCore(
-  fromAnchor,
-  toAnchor,
-  obstacles,
-  blockedEdges,
-  allowedEdges,
-  window,
-  offset,
-  width,
-  height,
-  startDir,
-  endDir
-) {
-  const win = window || computeRouteWindow(fromAnchor, toAnchor, obstacles, width, height);
-  const edgeBlockFn = buildEdgeBlocker(blockedEdges, allowedEdges, win.offset, win.width, win.height);
-  const fromShift = { x: fromAnchor.x - win.offset.x, y: fromAnchor.y - win.offset.y };
-  const toShift = { x: toAnchor.x - win.offset.x, y: toAnchor.y - win.offset.y };
-  const shifted = win.obstacles.map((rect) => ({
-    left: rect.left - win.offset.x,
-    right: rect.right - win.offset.x,
-    top: rect.top - win.offset.y,
-    bottom: rect.bottom - win.offset.y,
-  }));
-  const core = routeOrthogonal(
-    fromShift,
-    toShift,
-    shifted,
-    win.width,
-    win.height,
-    null,
-    COST.turn * 100000,
-    40,
-    null,
-    null,
-    edgeBlockFn,
-    startDir,
-    endDir
+export function routeDirtyConnections(state, width, height, offset = { x: 0, y: 0 }, dirtySet, timeLimitMs) {
+  const { nodes, connections, obstacles, prevSolution } = buildRouter2Input(state, dirtySet);
+  const changedConnections = new Set(
+    connections.filter((conn) => dirtySet.has(conn.__ref)).map((conn) => conn.key)
   );
-  if (!core || core.length === 0) return null;
-  return core.map((pt) => ({ x: pt.x + win.offset.x, y: pt.y + win.offset.y }));
-}
-
-function trimOutwardRun(points, side, obstacles, blockedEdges, allowedEdges) {
-  if (!points || points.length < 4) return points;
-  const start = points[0];
-  const stub = points[1];
-  if (!isOutwardSegment(start, stub, side)) return points;
-  let idx = 2;
-  while (idx < points.length && isOutwardSegment(points[idx - 1], points[idx], side)) {
-    idx += 1;
-  }
-  if (idx <= 2 || idx >= points.length) return points;
-  const afterRun = points[idx];
-  const corner =
-    side === "left" || side === "right"
-      ? { x: stub.x, y: afterRun.y }
-      : { x: afterRun.x, y: stub.y };
-  if (!segmentClearAllowed(stub, corner, obstacles, blockedEdges, allowedEdges)) return points;
-  if (!segmentClearAllowed(corner, afterRun, obstacles, blockedEdges, allowedEdges)) return points;
-  const prefix = points.slice(0, 2);
-  const suffix = points.slice(idx);
-  return simplifyPoints([...prefix, corner, ...suffix]);
-}
-
-function isOutwardSegment(a, b, side) {
-  if (side === "left") return a.y === b.y && b.x < a.x;
-  if (side === "right") return a.y === b.y && b.x > a.x;
-  if (side === "top") return a.x === b.x && b.y < a.y;
-  return a.x === b.x && b.y > a.y;
-}
-
-
-function addPenaltyFromRoute(points, width, height, penaltyMap) {
-  if (!penaltyMap) return;
-  const cols = Math.max(2, Math.floor(width / GRID_SIZE) + 1);
-  const rows = Math.max(2, Math.floor(height / GRID_SIZE) + 1);
-  const segments = pointsToSegments(points);
-  segments.forEach((seg) => addPenaltyFromSegment(seg, cols, rows, penaltyMap));
-}
-
-function addNodePenaltyFromRoute(points, width, height, penaltyMap) {
-  if (!penaltyMap || points.length === 0) return;
-  const cols = Math.max(2, Math.floor(width / GRID_SIZE) + 1);
-  const rows = Math.max(2, Math.floor(height / GRID_SIZE) + 1);
-  const addPenalty = (x, y, value) => {
-    if (x < 0 || y < 0 || x >= cols || y >= rows) return;
-    const key = `${x},${y}`;
-    penaltyMap.set(key, (penaltyMap.get(key) || 0) + value);
+  const settings = {
+    maxTimeMs: timeLimitMs ?? 400,
+    incremental: true,
+    fullOptimize: false,
+    changedConnections: Array.from(changedConnections),
+    searchPadding: Math.max(20, Math.ceil(Math.max(width, height) / GRID_SIZE) + 5),
+    nearObstaclePenalty1: 10,
+    nearObstaclePenalty2: 4,
+    nearWirePenalty1: 6,
+    nearWirePenalty2: 2,
   };
-  points.forEach((pt) => {
-    const x = Math.round(pt.x / GRID_SIZE);
-    const y = Math.round(pt.y / GRID_SIZE);
-    addPenalty(x, y, COST.node);
-    addPenalty(x - 1, y, COST.nodeNear);
-    addPenalty(x + 1, y, COST.nodeNear);
-    addPenalty(x, y - 1, COST.nodeNear);
-    addPenalty(x, y + 1, COST.nodeNear);
+  const result = routeConnections2({
+    nodes,
+    connections,
+    obstacles,
+    prevSolution,
+    settings,
   });
+  if (typeof window !== "undefined") {
+    window.__routerLast = {
+      nodes,
+      connections,
+      obstacles,
+      result,
+      settings,
+    };
+  }
+  return applyRouter2Result(state, connections, result);
 }
 
-function addPenaltyFromSegment(seg, cols, rows, penaltyMap) {
-  const addPenalty = (x, y, value) => {
-    if (x < 0 || y < 0 || x >= cols || y >= rows) return;
-    const key = `${x},${y}`;
-    penaltyMap.set(key, (penaltyMap.get(key) || 0) + value);
-  };
+function buildRouter2Input(state, dirtySet = null) {
+  const nodes = [];
+  const nodeMap = new Map();
+  const connections = [];
+  const prevWires = {};
+  const obstacles = [];
 
-  if (seg.orientation === "H") {
-    const y = Math.round(seg.a.y / GRID_SIZE);
-    const startX = Math.round(seg.a.x / GRID_SIZE);
-    const endX = Math.round(seg.b.x / GRID_SIZE);
-    for (let x = startX; x <= endX; x += 1) {
-      addPenalty(x, y, COST.wire);
-      addPenalty(x, y - 1, COST.wireNear);
-      addPenalty(x, y + 1, COST.wireNear);
-      addPenalty(x - 1, y, COST.wireFar);
-      addPenalty(x + 1, y, COST.wireFar);
+  state.connections.forEach((conn) => {
+    const fromNode = ensurePortNode(state, conn.from, "out", conn.fromIndex ?? 0, nodeMap, nodes);
+    const toNode = ensurePortNode(state, conn.to, "in", conn.toIndex ?? 0, nodeMap, nodes);
+    if (!fromNode || !toNode) return;
+    const key = `${conn.from}:${conn.fromIndex ?? 0}->${conn.to}:${conn.toIndex ?? 0}`;
+    connections.push({ from: fromNode.id, to: toNode.id, key, __ref: conn });
+    if (conn.points && conn.points.length > 1 && (!dirtySet || !dirtySet.has(conn))) {
+      prevWires[key] = conn.points.map((pt) => ({
+        x: Math.round(pt.x / GRID_SIZE),
+        y: Math.round(pt.y / GRID_SIZE),
+      }));
     }
-  } else {
-    const x = Math.round(seg.a.x / GRID_SIZE);
-    const startY = Math.round(seg.a.y / GRID_SIZE);
-    const endY = Math.round(seg.b.y / GRID_SIZE);
-    for (let y = startY; y <= endY; y += 1) {
-      addPenalty(x, y, COST.wire);
-      addPenalty(x - 1, y, COST.wireNear);
-      addPenalty(x + 1, y, COST.wireNear);
-      addPenalty(x, y - 1, COST.wireFar);
-      addPenalty(x, y + 1, COST.wireFar);
+  });
+
+  state.blocks.forEach((block) => {
+    obstacles.push(...blockToObstacles(block));
+  });
+
+  const prevSolution = Object.keys(prevWires).length ? { wires: prevWires } : null;
+  return { nodes, connections, obstacles, prevSolution };
+}
+
+function ensurePortNode(state, blockId, type, index, nodeMap, nodes) {
+  const block = state.blocks.get(blockId);
+  if (!block) return null;
+  const port = block.ports.find((p) => p.type === type && p.index === index);
+  if (!port) return null;
+  const key = `${blockId}:${type}:${index}`;
+  if (nodeMap.has(key)) return nodeMap.get(key);
+  const raw = rotatePoint({ x: block.x + port.x, y: block.y + port.y }, block);
+  const pos = { x: snap(raw.x), y: snap(raw.y) };
+  const side = getPortSide(block, raw);
+  const dir = sideToDir(side);
+  const node = {
+    id: key,
+    x: Math.round(pos.x / GRID_SIZE),
+    y: Math.round(pos.y / GRID_SIZE),
+    dir,
+  };
+  nodeMap.set(key, node);
+  nodes.push(node);
+  return node;
+}
+
+function blockIdFromNodeId(nodeId) {
+  return typeof nodeId === "string" ? nodeId.split(":")[0] : "";
+}
+
+function blockToObstacles(block) {
+  const PORT_RADIUS = 6;
+  const padding = 0;
+  const bounds = getRotatedBounds(block);
+  let left = bounds.left;
+  let right = bounds.right;
+  let top = bounds.top;
+  let bottom = bounds.bottom;
+  block.ports.forEach((port) => {
+    const pos = rotatePoint({ x: block.x + port.x, y: block.y + port.y }, block);
+    left = Math.min(left, pos.x - PORT_RADIUS);
+    right = Math.max(right, pos.x + PORT_RADIUS);
+    top = Math.min(top, pos.y - PORT_RADIUS);
+    bottom = Math.max(bottom, pos.y + PORT_RADIUS);
+  });
+  left -= padding;
+  right += padding;
+  top -= padding;
+  bottom += padding;
+  return [
+    {
+      x0: Math.floor(left / GRID_SIZE),
+      y0: Math.floor(top / GRID_SIZE),
+      x1: Math.floor(right / GRID_SIZE),
+      y1: Math.floor(bottom / GRID_SIZE),
+      owner: block.id,
+    },
+  ];
+}
+
+function applyRouter2Result(state, connections, result) {
+  const paths = new Map();
+  connections.forEach((conn) => {
+    const wire = result.wires.get(conn.key);
+    if (!wire || !wire.points.length) {
+      if (conn.__ref.points && conn.__ref.points.length) {
+        paths.set(conn.__ref, pointsToPath(conn.__ref.points));
+      } else {
+        conn.__ref.points = [];
+        paths.set(conn.__ref, "");
+      }
+      return;
     }
+    const points = wire.points.map((pt) => ({
+      x: pt.x * GRID_SIZE,
+      y: pt.y * GRID_SIZE,
+    }));
+    conn.__ref.points = points;
+    const d = pointsToPath(points);
+    paths.set(conn.__ref, d);
+  });
+  return paths;
+}
+
+function pointsToPath(points) {
+  if (!points.length) return "";
+  const parts = [`M ${points[0].x} ${points[0].y}`];
+  for (let i = 1; i < points.length; i += 1) {
+    parts.push(`L ${points[i].x} ${points[i].y}`);
   }
+  return parts.join(" ");
 }
 
 function rotatePoint(point, block) {
@@ -661,32 +933,6 @@ function rotatePoint(point, block) {
   if (angle === 180) return { x: cx - dx, y: cy - dy };
   if (angle === 270) return { x: cx + dy, y: cy - dx };
   return point;
-}
-
-function rotateSide(side, rotation = 0) {
-  const angle = ((rotation || 0) % 360 + 360) % 360;
-  if (angle === 0) return side;
-  const map90 = { left: "bottom", bottom: "right", right: "top", top: "left" };
-  const map180 = { left: "right", right: "left", top: "bottom", bottom: "top" };
-  const map270 = { left: "top", top: "right", right: "bottom", bottom: "left" };
-  if (angle === 90) return map90[side] || side;
-  if (angle === 180) return map180[side] || side;
-  if (angle === 270) return map270[side] || side;
-  return side;
-}
-
-function getPortSide(block, port, rotatedPoint) {
-  const angle = ((block.rotation || 0) % 360 + 360) % 360;
-  if (angle === 0) return port.side;
-  const center = { x: block.x + block.width / 2, y: block.y + block.height / 2 };
-  const dx = rotatedPoint.x - center.x;
-  const dy = rotatedPoint.y - center.y;
-  if (Math.abs(dx) >= Math.abs(dy)) return dx < 0 ? "left" : "right";
-  return dy < 0 ? "top" : "bottom";
-}
-
-function snapAnchor(anchor) {
-  return { x: snap(anchor.x), y: snap(anchor.y) };
 }
 
 function getRotatedBounds(block) {
@@ -704,578 +950,17 @@ function getRotatedBounds(block) {
   };
 }
 
-function getBlockBodyBounds(block) {
-  return getRotatedBounds(block);
+function getPortSide(block, rotatedPoint) {
+  const center = { x: block.x + block.width / 2, y: block.y + block.height / 2 };
+  const dx = rotatedPoint.x - center.x;
+  const dy = rotatedPoint.y - center.y;
+  if (Math.abs(dx) >= Math.abs(dy)) return dx < 0 ? "left" : "right";
+  return dy < 0 ? "top" : "bottom";
 }
 
-function getBlockBounds(block) {
-  const bounds = getRotatedBounds(block);
-  let left = bounds.left;
-  let right = bounds.right;
-  let top = bounds.top;
-  let bottom = bounds.bottom;
-  block.ports.forEach((port) => {
-    const pos = rotatePoint({ x: block.x + port.x, y: block.y + port.y }, block);
-    const cx = pos.x;
-    const cy = pos.y;
-    left = Math.min(left, cx - PORT_RADIUS);
-    right = Math.max(right, cx + PORT_RADIUS);
-    top = Math.min(top, cy - PORT_RADIUS);
-    bottom = Math.max(bottom, cy + PORT_RADIUS);
-  });
-  return { left, right, top, bottom };
-}
-
-function anchorFromPort(port, side, _index = 0, lane = 0) {
-  const offset = GRID_SIZE;
-  const laneShift = laneOffset(lane) * GRID_SIZE;
-  if (side === "left") return { x: port.x - offset - laneShift, y: port.y };
-  if (side === "right") return { x: port.x + offset + laneShift, y: port.y };
-  if (side === "top") return { x: port.x, y: port.y - offset - laneShift };
-  return { x: port.x, y: port.y + offset + laneShift };
-}
-
-function laneOffset(index) {
-  if (index === 0) return 0;
-  const step = Math.ceil(index / 2);
-  return index % 2 === 1 ? step : -step;
-}
-
-function sideToDir(side, mode) {
-  if (mode === "in") {
-    if (side === "left") return "r";
-    if (side === "right") return "l";
-    if (side === "top") return "d";
-    return "u";
-  }
-  if (side === "left") return "l";
-  if (side === "right") return "r";
-  if (side === "top") return "u";
-  return "d";
-}
-
-function pointsToSegments(points) {
-  const segments = [];
-  for (let i = 0; i < points.length - 1; i += 1) {
-    const a = points[i];
-    const b = points[i + 1];
-    if (a.x === b.x && a.y === b.y) continue;
-    if (a.x === b.x) {
-      const minY = Math.min(a.y, b.y);
-      const maxY = Math.max(a.y, b.y);
-      segments.push({ orientation: "V", a: { x: a.x, y: minY }, b: { x: b.x, y: maxY } });
-    } else {
-      const minX = Math.min(a.x, b.x);
-      const maxX = Math.max(a.x, b.x);
-      segments.push({ orientation: "H", a: { x: minX, y: a.y }, b: { x: maxX, y: b.y } });
-    }
-  }
-  return segments;
-}
-
-function buildPathWithHops(segments, otherSegments) {
-  if (segments.length === 0) return "";
-  const commands = [];
-  let current = segments[0].a;
-  commands.push(`M ${current.x} ${current.y}`);
-
-  segments.forEach((seg) => {
-    if (current.x !== seg.a.x || current.y !== seg.a.y) {
-      const mid = { x: seg.a.x, y: current.y };
-      if (current.x !== mid.x || current.y !== mid.y) {
-        commands.push(`L ${mid.x} ${mid.y}`);
-      }
-      if (mid.x !== seg.a.x || mid.y !== seg.a.y) {
-        commands.push(`L ${seg.a.x} ${seg.a.y}`);
-      }
-      current = seg.a;
-    }
-
-    if (seg.orientation === "H") {
-      const crossings = getCrossingsOnHorizontal(seg, otherSegments)
-        .filter((x) => x > seg.a.x + HOP_RADIUS && x < seg.b.x - HOP_RADIUS)
-        .sort((a, b) => a - b)
-        .map((x) => ({ x }));
-
-      crossings.forEach((cross) => {
-        commands.push(`L ${cross.x - HOP_RADIUS} ${seg.a.y}`);
-        commands.push(`a ${HOP_RADIUS} ${HOP_RADIUS} 0 0 1 ${HOP_RADIUS * 2} 0`);
-      });
-      commands.push(`L ${seg.b.x} ${seg.b.y}`);
-    } else {
-      const crossings = getCrossingsOnVertical(seg, otherSegments)
-        .filter((y) => y > seg.a.y + HOP_RADIUS && y < seg.b.y - HOP_RADIUS)
-        .sort((a, b) => a - b)
-        .map((y) => ({ y }));
-      crossings.forEach((cross) => {
-        commands.push(`L ${seg.a.x} ${cross.y - HOP_RADIUS}`);
-        commands.push(`a ${HOP_RADIUS} ${HOP_RADIUS} 0 0 1 0 ${HOP_RADIUS * 2}`);
-      });
-      commands.push(`L ${seg.b.x} ${seg.b.y}`);
-    }
-    current = seg.b;
-  });
-
-  return commands.join(" ");
-}
-
-function getCrossingsOnHorizontal(seg, otherSegments) {
-  const hits = [];
-  const y = seg.a.y;
-  const minX = Math.min(seg.a.x, seg.b.x);
-  const maxX = Math.max(seg.a.x, seg.b.x);
-  otherSegments.forEach((other) => {
-    if (other.orientation !== "V") return;
-    const x = other.a.x;
-    const minY = Math.min(other.a.y, other.b.y);
-    const maxY = Math.max(other.a.y, other.b.y);
-    if (x <= minX || x >= maxX) return;
-    if (y <= minY || y >= maxY) return;
-    hits.push(x);
-  });
-  return hits;
-}
-
-function getCrossingsOnVertical(seg, otherSegments) {
-  const hits = [];
-  const x = seg.a.x;
-  const minY = Math.min(seg.a.y, seg.b.y);
-  const maxY = Math.max(seg.a.y, seg.b.y);
-  otherSegments.forEach((other) => {
-    if (other.orientation !== "H") return;
-    const y = other.a.y;
-    const minX = Math.min(other.a.x, other.b.x);
-    const maxX = Math.max(other.a.x, other.b.x);
-    if (y <= minY || y >= maxY) return;
-    if (x <= minX || x >= maxX) return;
-    hits.push(y);
-  });
-  return hits;
-}
-
-function segmentsFromPoints(points) {
-  const segments = [];
-  if (!points || points.length < 2) return segments;
-  for (let i = 0; i < points.length - 1; i += 1) {
-    const a = points[i];
-    const b = points[i + 1];
-    if (a.x === b.x && a.y === b.y) continue;
-    const orientation = a.x === b.x ? "V" : "H";
-    segments.push({ a, b, orientation });
-  }
-  return segments;
-}
-
-function edgeKey(a, b) {
-  const ax = a.x;
-  const ay = a.y;
-  const bx = b.x;
-  const by = b.y;
-  if (ax < bx || (ax === bx && ay <= by)) return `${ax},${ay}|${bx},${by}`;
-  return `${bx},${by}|${ax},${ay}`;
-}
-
-function addEdgesFromPoints(points, edgeSet) {
-  if (!points || points.length < 2) return;
-  for (let i = 0; i < points.length - 1; i += 1) {
-    const a = points[i];
-    const b = points[i + 1];
-    if (a.x !== b.x && a.y !== b.y) continue;
-    const ax = Math.round(a.x / GRID_SIZE);
-    const ay = Math.round(a.y / GRID_SIZE);
-    const bx = Math.round(b.x / GRID_SIZE);
-    const by = Math.round(b.y / GRID_SIZE);
-    const dx = Math.sign(bx - ax);
-    const dy = Math.sign(by - ay);
-    let x = ax;
-    let y = ay;
-    while (x !== bx || y !== by) {
-      const nx = x + dx;
-      const ny = y + dy;
-      edgeSet.add(edgeKey({ x, y }, { x: nx, y: ny }));
-      x = nx;
-      y = ny;
-    }
-  }
-}
-
-function addOccupiedNodes(points, nodeMap) {
-  if (!points || points.length < 2) return;
-  for (let i = 0; i < points.length - 1; i += 1) {
-    const a = points[i];
-    const b = points[i + 1];
-    if (a.x !== b.x && a.y !== b.y) continue;
-    const ax = Math.round(a.x / GRID_SIZE);
-    const ay = Math.round(a.y / GRID_SIZE);
-    const bx = Math.round(b.x / GRID_SIZE);
-    const by = Math.round(b.y / GRID_SIZE);
-    const dx = Math.sign(bx - ax);
-    const dy = Math.sign(by - ay);
-    const orientation = dx !== 0 ? "H" : "V";
-    let x = ax;
-    let y = ay;
-    while (x !== bx || y !== by) {
-      const key = `${x},${y}`;
-      const entry = nodeMap.get(key) || { H: 0, V: 0 };
-      entry[orientation] += 1;
-      nodeMap.set(key, entry);
-      x += dx;
-      y += dy;
-    }
-  }
-}
-
-function buildCrossPenalty(nodeMap, offset, width, height) {
-  if (!nodeMap) return null;
-  const minX = Math.floor(offset.x / GRID_SIZE);
-  const minY = Math.floor(offset.y / GRID_SIZE);
-  const maxX = Math.floor((offset.x + width) / GRID_SIZE);
-  const maxY = Math.floor((offset.y + height) / GRID_SIZE);
-  return (x, y, dir) => {
-    const gx = x + minX;
-    const gy = y + minY;
-    if (gx < minX || gx > maxX || gy < minY || gy > maxY) return 0;
-    const entry = nodeMap.get(`${gx},${gy}`);
-    if (!entry) return 0;
-    if (dir === "l" || dir === "r") return entry.V > 0 ? COST.cross : 0;
-    if (dir === "u" || dir === "d") return entry.H > 0 ? COST.cross : 0;
-    return 0;
-  };
-}
-
-function buildEdgePenalty(edgeSet, penalty, allowedEdges = null, offset = { x: 0, y: 0 }, width = 0, height = 0) {
-  if (!edgeSet || edgeSet.size === 0) return null;
-  const allowedLocal =
-    allowedEdges && allowedEdges.size > 0 ? toLocalEdges(allowedEdges, offset, width, height) : null;
-  return (edgeKey) => {
-    if (allowedLocal && allowedLocal.has(edgeKey)) return 0;
-    return edgeSet.has(edgeKey) ? penalty : 0;
-  };
-}
-
-function buildEdgeBlocker(edgeSet, allowedEdges, offset, width, height) {
-  if (!edgeSet || edgeSet.size === 0) return null;
-  const local = toLocalEdges(edgeSet, offset, width, height);
-  if (!allowedEdges || allowedEdges.size === 0) return (edgeKey) => local.has(edgeKey);
-  const allowedLocal = toLocalEdges(allowedEdges, offset, width, height);
-  return (edgeKey) => local.has(edgeKey) && !allowedLocal.has(edgeKey);
-}
-
-function addStubEdgesForPort(points, edgesByPort, blockId, type, index, isFrom) {
-  if (!points || points.length < 2) return;
-  const key = portKey(blockId, type, index);
-  const set = edgesByPort.get(key) || new Set();
-  const stubPoints = isFrom ? points.slice(0, 3) : points.slice(-3);
-  addEdgesFromPoints(stubPoints, set);
-  edgesByPort.set(key, set);
-}
-
-function allowedEdgeSet(edgesByPort, conn) {
-  const fromKey = portKey(conn.from, "out", conn.fromIndex ?? 0);
-  const toKey = portKey(conn.to, "in", conn.toIndex);
-  const allowed = new Set();
-  const fromEdges = edgesByPort.get(fromKey);
-  const toEdges = edgesByPort.get(toKey);
-  if (fromEdges) fromEdges.forEach((edge) => allowed.add(edge));
-  if (toEdges) toEdges.forEach((edge) => allowed.add(edge));
-  return allowed;
-}
-
-function portKey(id, type, index) {
-  return `${id}:${type}:${index}`;
-}
-
-function toLocalEdges(edgeSet, offset, width, height) {
-  const local = new Set();
-  const minX = Math.floor(offset.x / GRID_SIZE);
-  const minY = Math.floor(offset.y / GRID_SIZE);
-  const maxX = Math.floor((offset.x + width) / GRID_SIZE);
-  const maxY = Math.floor((offset.y + height) / GRID_SIZE);
-  edgeSet.forEach((key) => {
-    const [aRaw, bRaw] = key.split("|");
-    const [ax, ay] = aRaw.split(",").map(Number);
-    const [bx, by] = bRaw.split(",").map(Number);
-    if (ax < minX || ax > maxX || ay < minY || ay > maxY) return;
-    if (bx < minX || bx > maxX || by < minY || by > maxY) return;
-    const a = { x: ax - minX, y: ay - minY };
-    const b = { x: bx - minX, y: by - minY };
-    local.add(edgeKey(a, b));
-  });
-  return local;
-}
-
-function buildPointsWithHops(points, otherSegments) {
-  if (!points || points.length < 2) return points || [];
-  const hopPoints = [];
-  const pushPoint = (pt) => {
-    const last = hopPoints[hopPoints.length - 1];
-    if (!last || last.x !== pt.x || last.y !== pt.y) {
-      hopPoints.push({ x: pt.x, y: pt.y });
-    }
-  };
-  const hop = (start, end, crossings, axis) => {
-    pushPoint(start);
-    crossings.forEach((cross) => {
-      if (axis === "H") {
-        pushPoint({ x: cross.x - HOP_RADIUS, y: start.y });
-        pushPoint({ x: cross.x + HOP_RADIUS, y: start.y });
-      } else {
-        pushPoint({ x: start.x, y: cross.y - HOP_RADIUS });
-        pushPoint({ x: start.x, y: cross.y + HOP_RADIUS });
-      }
-    });
-    pushPoint(end);
-  };
-
-  for (let i = 0; i < points.length - 1; i += 1) {
-    const a = points[i];
-    const b = points[i + 1];
-    if (a.x === b.x && a.y === b.y) continue;
-    const isStubSegment = i === 0 || i === points.length - 2;
-    if (isStubSegment) {
-      pushPoint(a);
-      pushPoint(b);
-      continue;
-    }
-    const isVertical = a.x === b.x;
-    const isHorizontal = a.y === b.y;
-    if (!isVertical && !isHorizontal) {
-      pushPoint(a);
-      pushPoint(b);
-      continue;
-    }
-    if (isVertical) {
-      const minY = Math.min(a.y, b.y);
-      const maxY = Math.max(a.y, b.y);
-      const crossings = otherSegments
-        .filter((s) => s.orientation === "H")
-        .map((s) => ({ y: s.a.y, x1: s.a.x, x2: s.b.x }))
-        .filter((s) => s.y > minY + HOP_RADIUS && s.y < maxY - HOP_RADIUS)
-        .filter((s) => s.x1 <= a.x && s.x2 >= a.x)
-        .sort((c1, c2) => (a.y < b.y ? c1.y - c2.y : c2.y - c1.y));
-      hop(a, b, crossings, "V");
-    } else {
-      const minX = Math.min(a.x, b.x);
-      const maxX = Math.max(a.x, b.x);
-      const crossings = otherSegments
-        .filter((s) => s.orientation === "V")
-        .map((s) => ({ x: s.a.x, y1: s.a.y, y2: s.b.y }))
-        .filter((s) => s.x > minX + HOP_RADIUS && s.x < maxX - HOP_RADIUS)
-        .filter((s) => s.y1 <= a.y && s.y2 >= a.y)
-        .sort((c1, c2) => (a.x < b.x ? c1.x - c2.x : c2.x - c1.x));
-      hop(a, b, crossings, "H");
-    }
-  }
-
-  return simplifyPointsPreserveEnds(hopPoints);
-}
-
-function simplifyPointsLocked(points, locked) {
-  if (!points || points.length <= 2) return points || [];
-  const simplified = [points[0]];
-  for (let i = 1; i < points.length - 1; i += 1) {
-    const prev = simplified[simplified.length - 1];
-    const curr = points[i];
-    const next = points[i + 1];
-    if (locked.has(pointKey(curr))) {
-      simplified.push(curr);
-      continue;
-    }
-    const sameX = prev.x === curr.x && curr.x === next.x;
-    const sameY = prev.y === curr.y && curr.y === next.y;
-    if (sameX || sameY) continue;
-    simplified.push(curr);
-  }
-  simplified.push(points[points.length - 1]);
-  return simplified;
-}
-
-function simplifyPointsPreserveEnds(points) {
-  if (!points || points.length <= 4) return points || [];
-  const head = points.slice(0, 2);
-  const tail = points.slice(-2);
-  const mid = points.slice(2, -2);
-  const simplifiedMid = simplifyPoints(mid);
-  return [...head, ...simplifiedMid, ...tail];
-}
-
-function pointKey(point) {
-  return `${point.x},${point.y}`;
-}
-
-function stubPointFromPort(port, side) {
-  if (side === "left") return { x: port.x - GRID_SIZE, y: port.y };
-  if (side === "right") return { x: port.x + GRID_SIZE, y: port.y };
-  if (side === "top") return { x: port.x, y: port.y - GRID_SIZE };
-  return { x: port.x, y: port.y + GRID_SIZE };
-}
-
-function segmentClear(a, b, obstacles, blockedEdges) {
-  if (a.x !== b.x && a.y !== b.y) return false;
-  if (obstacles.some((rect) => segmentHitsRect(a, b, rect))) return false;
-  if (!blockedEdges || blockedEdges.size === 0) return true;
-  const ax = Math.round(a.x / GRID_SIZE);
-  const ay = Math.round(a.y / GRID_SIZE);
-  const bx = Math.round(b.x / GRID_SIZE);
-  const by = Math.round(b.y / GRID_SIZE);
-  const dx = Math.sign(bx - ax);
-  const dy = Math.sign(by - ay);
-  let x = ax;
-  let y = ay;
-  while (x !== bx || y !== by) {
-    const nx = x + dx;
-    const ny = y + dy;
-    if (blockedEdges.has(edgeKey({ x, y }, { x: nx, y: ny }))) return false;
-    x = nx;
-    y = ny;
-  }
-  return true;
-}
-
-function segmentClearAllowed(a, b, obstacles, blockedEdges, allowedEdges) {
-  if (a.x !== b.x && a.y !== b.y) return false;
-  if (obstacles.some((rect) => segmentHitsRect(a, b, rect))) return false;
-  if (!blockedEdges || blockedEdges.size === 0) return true;
-  const ax = Math.round(a.x / GRID_SIZE);
-  const ay = Math.round(a.y / GRID_SIZE);
-  const bx = Math.round(b.x / GRID_SIZE);
-  const by = Math.round(b.y / GRID_SIZE);
-  const dx = Math.sign(bx - ax);
-  const dy = Math.sign(by - ay);
-  let x = ax;
-  let y = ay;
-  while (x !== bx || y !== by) {
-    const nx = x + dx;
-    const ny = y + dy;
-    const key = edgeKey({ x, y }, { x: nx, y: ny });
-    if (blockedEdges.has(key) && !(allowedEdges && allowedEdges.has(key))) return false;
-    x = nx;
-    y = ny;
-  }
-  return true;
-}
-
-function findTwoTurnPathAllowed(start, end, obstacles, blockedEdges, allowedEdges) {
-  if (start.x === end.x || start.y === end.y) return [start, end];
-  const candidates = [];
-  const xs = new Set([start.x, end.x]);
-  const ys = new Set([start.y, end.y]);
-  obstacles.forEach((rect) => {
-    xs.add(snap(rect.left - GRID_SIZE));
-    xs.add(snap(rect.right + GRID_SIZE));
-    ys.add(snap(rect.top - GRID_SIZE));
-    ys.add(snap(rect.bottom + GRID_SIZE));
-  });
-  xs.forEach((x) => {
-    const p1 = { x, y: start.y };
-    const p2 = { x, y: end.y };
-    if (
-      segmentClearAllowed(start, p1, obstacles, blockedEdges, allowedEdges) &&
-      segmentClearAllowed(p1, p2, obstacles, blockedEdges, allowedEdges) &&
-      segmentClearAllowed(p2, end, obstacles, blockedEdges, allowedEdges)
-    ) {
-      candidates.push([start, p1, p2, end]);
-    }
-  });
-  ys.forEach((y) => {
-    const p1 = { x: start.x, y };
-    const p2 = { x: end.x, y };
-    if (
-      segmentClearAllowed(start, p1, obstacles, blockedEdges, allowedEdges) &&
-      segmentClearAllowed(p1, p2, obstacles, blockedEdges, allowedEdges) &&
-      segmentClearAllowed(p2, end, obstacles, blockedEdges, allowedEdges)
-    ) {
-      candidates.push([start, p1, p2, end]);
-    }
-  });
-  if (candidates.length === 0) return null;
-  candidates.sort((a, b) => pathLength(a) - pathLength(b));
-  return simplifyPoints(candidates[0]);
-}
-
-function pathLength(points) {
-  let length = 0;
-  for (let i = 0; i < points.length - 1; i += 1) {
-    length += Math.abs(points[i].x - points[i + 1].x) + Math.abs(points[i].y - points[i + 1].y);
-  }
-  return length;
-}
-
-function countTurns(points) {
-  let turns = 0;
-  let prevDir = null;
-  for (let i = 0; i < points.length - 1; i += 1) {
-    const a = points[i];
-    const b = points[i + 1];
-    if (a.x === b.x && a.y === b.y) continue;
-    const dir = a.x === b.x ? "V" : a.y === b.y ? "H" : null;
-    if (!dir) continue;
-    if (prevDir && dir !== prevDir) turns += 1;
-    prevDir = dir;
-  }
-  return turns;
-}
-
-function computeRouteWindow(from, to, obstacles, worldW, worldH, margin = GRID_SIZE * 30) {
-  const base = {
-    minX: Math.min(from.x, to.x),
-    maxX: Math.max(from.x, to.x),
-    minY: Math.min(from.y, to.y),
-    maxY: Math.max(from.y, to.y),
-  };
-  const expanded = {
-    left: Math.max(0, base.minX - margin),
-    right: Math.min(worldW, base.maxX + margin),
-    top: Math.max(0, base.minY - margin),
-    bottom: Math.min(worldH, base.maxY + margin),
-  };
-  const align = (value, mode) => {
-    const scaled = value / GRID_SIZE;
-    return mode === "floor"
-      ? Math.floor(scaled) * GRID_SIZE
-      : Math.ceil(scaled) * GRID_SIZE;
-  };
-  const aligned = {
-    left: align(expanded.left, "floor"),
-    right: align(expanded.right, "ceil"),
-    top: align(expanded.top, "floor"),
-    bottom: align(expanded.bottom, "ceil"),
-  };
-  const filtered = obstacles.filter(
-    (rect) =>
-      rect.right >= aligned.left &&
-      rect.left <= aligned.right &&
-      rect.bottom >= aligned.top &&
-      rect.top <= aligned.bottom
-  );
-  const window = {
-    left: aligned.left,
-    right: aligned.right,
-    top: aligned.top,
-    bottom: aligned.bottom,
-  };
-  return {
-    offset: { x: window.left, y: window.top },
-    width: Math.max(GRID_SIZE * 2, window.right - window.left),
-    height: Math.max(GRID_SIZE * 2, window.bottom - window.top),
-    obstacles: filtered,
-    usedLocal: true,
-  };
-}
-
-function getRouteStats(points) {
-  let length = 0;
-  let turns = 0;
-  for (let i = 0; i < points.length - 1; i += 1) {
-    const a = points[i];
-    const b = points[i + 1];
-    length += Math.abs(a.x - b.x) + Math.abs(a.y - b.y);
-    if (i > 0) {
-      const p = points[i - 1];
-      const dir1 = a.x === p.x ? "V" : "H";
-      const dir2 = b.x === a.x ? "V" : "H";
-      if (dir1 !== dir2) turns += 1;
-    }
-  }
-  return { length, turns };
+function sideToDir(side) {
+  if (side === "left") return "left";
+  if (side === "right") return "right";
+  if (side === "top") return "up";
+  return "down";
 }
