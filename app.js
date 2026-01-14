@@ -1064,16 +1064,6 @@ function init() {
     renderer.updateConnections(true);
   });
 
-  const versionEl = document.querySelector(".version");
-  if (versionEl) {
-    fetch("dev-version.txt", { cache: "no-store" })
-      .then((res) => res.text())
-      .then((text) => {
-        const counter = text.trim();
-        if (counter) versionEl.textContent = `v0.1.${counter}`;
-      })
-      .catch(() => {});
-  }
 }
 
 init();
