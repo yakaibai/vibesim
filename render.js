@@ -1489,6 +1489,11 @@ export function createRenderer({ svg, blockLayer, wireLayer, overlayLayer, state
       }
     }
     const params = { ...(template.defaultParams || {}), ...(options.params || {}) };
+    Object.keys(params).forEach((key) => {
+      if (Array.isArray(params[key])) {
+        params[key] = [...params[key]];
+      }
+    });
     let blockWidth = template.width;
     let blockHeight = template.height;
     if (type === "scope") {

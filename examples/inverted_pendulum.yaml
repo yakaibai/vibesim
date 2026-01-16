@@ -18,9 +18,9 @@ blocks:
     y: 1430
     rotation: 0
     params:
-      kp: 5
-      ki: 2
-      kd: 1
+      kp: 20
+      ki: 1
+      kd: 2
   -
     id: b4
     type: tf
@@ -33,7 +33,7 @@ blocks:
       den:
         - I
         - 0
-        - mg
+        - -mg
   -
     id: b6
     type: labelSource

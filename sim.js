@@ -288,7 +288,17 @@ export function simulate({ state, runtimeInput, statusEl }) {
           out = (values[0] || 0) * gainValue;
         } else if (block.type === "sum") {
           const signs = block.params.signs || [];
-          out = values.reduce((acc, v, idx) => acc + (v ?? 0) * (signs[idx] ?? 1), 0);
+          let missing = false;
+          const resolved = inputs.map((fromId, idx) => {
+            if (!fromId) return 0;
+            if (!outputs.has(fromId)) {
+              missing = true;
+              return 0;
+            }
+            return values[idx] ?? 0;
+          });
+          if (missing) return;
+          out = resolved.reduce((acc, v, idx) => acc + v * (signs[idx] ?? 1), 0);
         } else if (block.type === "mult") {
           const v0 = values[0] ?? 1;
           const v1 = values[1] ?? 1;
