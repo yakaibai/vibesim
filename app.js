@@ -1015,7 +1015,7 @@ function parseYAML(text) {
 }
 
 function init() {
-  const exampleFiles = ["examples/inverted_pendulum.yaml"];
+  const exampleFiles = ["examples/inverted_pendulum.yaml", "examples/emf.yaml"];
   if (examplesList) {
     examplesList.innerHTML = "";
     exampleFiles.forEach((path) => {
