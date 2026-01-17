@@ -729,12 +729,13 @@ body::before {
 }
 
 .scope-dot-1 { fill: #f5e642; }
-.scope-dot-2 { fill: #39d7ff; }
-.scope-dot-3 { fill: #ff49c9; }
+.scope-dot-2 { fill: #ff49c9; }
+.scope-dot-3 { fill: #39d7ff; }
 
 .scope-label-1 { fill: #f5e642; }
-.scope-label-2 { fill: #39d7ff; }
-.scope-label-3 { fill: #ff49c9; }
+.scope-label-2 { fill: #ff49c9; }
+.scope-label-3 { fill: #39d7ff; }
+
 
 .inspector {
   margin: 0;
