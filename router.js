@@ -63,6 +63,7 @@ export function routeConnections2({
 
   const bounds = computeBounds(nodes, obstacles, opts.searchPadding);
   const obstacleGrid = buildObstacleGrid(obstacles);
+  const obstacleNearMap = buildObstacleNearMap(obstacleGrid, bounds);
   const routedWires = new Map();
 
   const staticWires = [];
@@ -95,11 +96,14 @@ export function routeConnections2({
       costs.failed += 1;
       return;
     }
+    const wireNearMap = buildWireNearMap(occupancy, bounds);
     const result = routeSingleConnection({
       from,
       to,
       obstacles,
       obstacleGrid,
+      obstacleNearMap,
+      wireNearMap,
       occupancy,
       bounds,
       opts,
@@ -192,7 +196,7 @@ function computeBounds(nodes, obstacles, padding) {
   };
 }
 
-function routeSingleConnection({ from, to, obstacles, obstacleGrid, occupancy, bounds, opts, meta }) {
+function routeSingleConnection({ from, to, obstacles, obstacleGrid, obstacleNearMap, wireNearMap, occupancy, bounds, opts, meta }) {
   const startDir = dirToVector(from.dir);
   const endDir = dirToVector(to.dir);
   if (!startDir || !endDir) return emptyResult("bad_direction");
@@ -293,6 +297,8 @@ function routeSingleConnection({ from, to, obstacles, obstacleGrid, occupancy, b
       occupancy,
       obstacles,
       obstacleGrid,
+      obstacleNearMap,
+      wireNearMap,
       bounds,
       opts,
       currentStats,
@@ -338,6 +344,8 @@ function expandNeighborsFast(
   occupancy,
   obstacles,
   obstacleGrid,
+  obstacleNearMap,
+  wireNearMap,
   bounds,
   opts,
   currentStats,
@@ -381,7 +389,18 @@ function expandNeighborsFast(
     }
 
     const turnCost = state.dir !== dir.idx ? opts.turnCost : 0;
-    const nearData = proximityPenalty(nextPoint, obstacleGrid, occupancy, opts, meta, currentStats, end);
+    const nearData = proximityPenalty(
+      nextPoint,
+      obstacleGrid,
+      obstacleNearMap,
+      wireNearMap,
+      occupancy,
+      bounds,
+      opts,
+      meta,
+      currentStats,
+      end
+    );
     results.push({
       state: {
         x: nx,
@@ -427,11 +446,29 @@ function buildResultFromArrays(endIdx, cameFrom, statsArrays, minX, minY, gridW)
   return { points: path, cost: stats };
 }
 
-function proximityPenalty(point, obstacleGrid, occupancy, opts, meta, currentStats, end) {
+function proximityPenalty(
+  point,
+  obstacleGrid,
+  obstacleNearMap,
+  wireNearMap,
+  occupancy,
+  bounds,
+  opts,
+  meta,
+  currentStats,
+  end
+) {
   let wire1 = 0;
   let wire2 = 0;
   let obs1 = 0;
   let obs2 = 0;
+  let wireNearCode = 0;
+
+  if (wireNearMap && bounds) {
+    const gridW = bounds.maxX - bounds.minX + 1;
+    const idx = cellIndex(point.x, point.y, bounds.minX, bounds.minY, gridW);
+    wireNearCode = wireNearMap[idx] || 0;
+  }
 
   const neighbors1 = [
     { x: point.x + 1, y: point.y },
@@ -457,16 +494,26 @@ function proximityPenalty(point, obstacleGrid, occupancy, opts, meta, currentSta
     return true;
   };
 
-  if (neighbors1.some((target) => isWireNear(target))) {
-    wire1 = 1;
-  } else if (neighbors2.some((target) => isWireNear(target))) {
-    wire2 = 1;
+  if (wireNearCode !== 0) {
+    if (wireNearCode === 1 && neighbors1.some((target) => isWireNear(target))) {
+      wire1 = 1;
+    } else if (neighbors2.some((target) => isWireNear(target))) {
+      wire2 = 1;
+    }
   }
 
   if (obstacleGrid) {
-    const obsNear = obstacleNear(point, obstacleGrid);
-    obs1 = obsNear.obs1;
-    obs2 = obsNear.obs2;
+    if (obstacleNearMap && bounds) {
+      const gridW = bounds.maxX - bounds.minX + 1;
+      const idx = cellIndex(point.x, point.y, bounds.minX, bounds.minY, gridW);
+      const nearCode = obstacleNearMap[idx] || 0;
+      obs1 = nearCode === 1 ? 1 : 0;
+      obs2 = nearCode === 2 ? 1 : 0;
+    } else {
+      const obsNear = obstacleNear(point, obstacleGrid);
+      obs1 = obsNear.obs1;
+      obs2 = obsNear.obs2;
+    }
   }
 
   const cost =
@@ -626,7 +673,7 @@ function occupancyPointInfo(point, occupancy, allowedSet, meta) {
   return info;
 }
 
-function buildObstacleGrid(obstacles) {
+export function buildObstacleGrid(obstacles) {
   if (!obstacles.length) return null;
   const grid = new Set();
   obstacles.forEach((obs) => {
@@ -664,6 +711,53 @@ function obstacleNear(point, grid) {
     return { obs1: 0, obs2: 1 };
   }
   return { obs1: 0, obs2: 0 };
+}
+
+export function buildObstacleNearMap(grid, bounds) {
+  if (!grid || !bounds) return null;
+  const gridW = bounds.maxX - bounds.minX + 1;
+  const gridH = bounds.maxY - bounds.minY + 1;
+  const map = new Uint8Array(gridW * gridH);
+  for (let y = bounds.minY; y <= bounds.maxY; y += 1) {
+    for (let x = bounds.minX; x <= bounds.maxX; x += 1) {
+      const idx = cellIndex(x, y, bounds.minX, bounds.minY, gridW);
+      const near = obstacleNear({ x, y }, grid);
+      map[idx] = near.obs1 ? 1 : near.obs2 ? 2 : 0;
+    }
+  }
+  return map;
+}
+
+export function buildWireNearMap(occupancy, bounds) {
+  if (!occupancy || !bounds || !occupancy.points || occupancy.points.size === 0) return null;
+  const gridW = bounds.maxX - bounds.minX + 1;
+  const gridH = bounds.maxY - bounds.minY + 1;
+  const map = new Uint8Array(gridW * gridH);
+  const mark = (x, y, value) => {
+    if (x < bounds.minX || x > bounds.maxX || y < bounds.minY || y > bounds.maxY) return;
+    const idx = cellIndex(x, y, bounds.minX, bounds.minY, gridW);
+    if (value === 1 && map[idx] !== 1) map[idx] = 1;
+    if (value === 2 && map[idx] === 0) map[idx] = 2;
+  };
+  occupancy.points.forEach((_, key) => {
+    const [xs, ys] = key.split(",");
+    const x = Number(xs);
+    const y = Number(ys);
+    if (!Number.isFinite(x) || !Number.isFinite(y)) return;
+    mark(x + 1, y, 1);
+    mark(x - 1, y, 1);
+    mark(x, y + 1, 1);
+    mark(x, y - 1, 1);
+    mark(x + 2, y, 2);
+    mark(x - 2, y, 2);
+    mark(x, y + 2, 2);
+    mark(x, y - 2, 2);
+    mark(x + 1, y + 1, 2);
+    mark(x + 1, y - 1, 2);
+    mark(x - 1, y + 1, 2);
+    mark(x - 1, y - 1, 2);
+  });
+  return map;
 }
 
 function pointKey(point) {

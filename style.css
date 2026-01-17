@@ -338,6 +338,7 @@ body::before {
   height: 100%;
   flex: 1;
   min-height: 0;
+  user-select: none;
   border: 2px dashed #cbb79a;
   background-color: #ffffff;
   background-image:
@@ -346,6 +347,12 @@ body::before {
   background-size: var(--grid-size, 10px) var(--grid-size, 10px);
   background-position: var(--grid-offset-x, 0px) var(--grid-offset-y, 0px);
   overflow: hidden;
+}
+
+#canvas svg {
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
 }
 
 .floating-controls {

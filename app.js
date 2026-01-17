@@ -863,7 +863,7 @@ function loadDiagram(data) {
     renderer.createConnection(conn.from, conn.to, conn.toIndex ?? 0, conn.fromIndex ?? 0);
   });
 
-  renderer.updateConnections(true);
+  renderer.forceFullRoute(3000);
   fitToDiagram();
 }
 
