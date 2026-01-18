@@ -413,6 +413,20 @@ body::before {
   box-shadow: 0 4px 0 #3c3c3c;
 }
 
+.floating-btn#runBtn {
+  background: #2b574a;
+  border-color: #2b574a;
+  box-shadow: 0 4px 0 #1d3b32;
+}
+
+.floating-btn#runBtn svg {
+  stroke: #fff;
+}
+
+.floating-btn#runBtn:active {
+  box-shadow: 0 2px 0 #1d3b32;
+}
+
 
 .floating-btn:active {
   transform: translateY(2px);

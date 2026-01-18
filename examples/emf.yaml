@@ -244,4 +244,4 @@ connections:
     to: b4
     fromIndex: 0
     toIndex: 0
-variables: "m=1\ng=9.81\nI=m\nmg=m*g\nk=1\nK=1\ntau=0"
+variables: "m=1\ng=9.81\nI=m\nmg=m*g\nk=1\nK=1\ntau=1"

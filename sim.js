@@ -215,7 +215,10 @@ export function simulate({ state, runtimeInput, statusEl }) {
       if (block.type === "tf") {
         const model = tfModels.get(block.id);
         const prev = block.tfState || model?.state || [];
-        const yPrev = model ? outputFromState(model, prev, 0) : 0;
+        const inputs = inputMap.get(block.id) || [];
+        const fromId = inputs[0];
+        const inputVal = fromId ? outputs.get(fromId) : 0;
+        const yPrev = model ? outputFromState(model, prev, inputVal ?? 0) : 0;
         outputs.set(block.id, yPrev);
       }
       if (block.type === "stateSpace") {
@@ -237,37 +240,8 @@ export function simulate({ state, runtimeInput, statusEl }) {
       }
     });
 
-    const resolveLabelSources = () => {
-      let changed = false;
-      blocks.forEach((block) => {
-        if (block.type !== "labelSource") return;
-        if (outputs.has(block.id)) return;
-        const name = String(block.params.name || "").trim();
-        if (!name) {
-          outputs.set(block.id, 0);
-          changed = true;
-          return;
-        }
-        const sinkId = labelSinks.get(name);
-        if (!sinkId) {
-          outputs.set(block.id, 0);
-          changed = true;
-          return;
-        }
-        const sinkInputs = inputMap.get(sinkId) || [];
-        const fromId = sinkInputs[0];
-        if (!fromId) {
-          outputs.set(block.id, 0);
-          changed = true;
-          return;
-        }
-        if (!outputs.has(fromId)) return;
-        const value = outputs.get(fromId);
-        outputs.set(block.id, value ?? 0);
-        changed = true;
-      });
-      return changed;
-    };
+    const resolveLabelSources = () =>
+      resolveLabelSourcesOnce(blocks, outputs, inputMap, labelSinks);
 
     const algebraicTypes = new Set(["sum", "mult", "gain", "saturation"]);
     let progress = true;
@@ -279,15 +253,20 @@ export function simulate({ state, runtimeInput, statusEl }) {
       if (resolveLabelSources()) progress = true;
       blocks.forEach((block) => {
         const params = resolvedParams.get(block.id) || {};
-        if (outputs.has(block.id) && !algebraicTypes.has(block.type)) return;
-        if (["scope", "integrator", "tf", "delay", "ddelay", "stateSpace", "dstateSpace", "lpf", "hpf", "derivative", "pid", "zoh", "foh", "dtf", "backlash", "fileSink", "labelSink", "labelSource"].includes(block.type)) return;
+        const isStaticTf = block.type === "tf" && (tfModels.get(block.id)?.n ?? 0) === 0;
+        if (outputs.has(block.id) && !algebraicTypes.has(block.type) && !isStaticTf) return;
+        if (["scope", "integrator", "delay", "ddelay", "stateSpace", "dstateSpace", "lpf", "hpf", "derivative", "pid", "zoh", "foh", "dtf", "backlash", "fileSink", "labelSink", "labelSource"].includes(block.type) && !isStaticTf) return;
 
         const inputs = inputMap.get(block.id) || [];
         const values = inputs.map((fromId) => (fromId ? outputs.get(fromId) : undefined));
         if (!["sum", "mult", "gain", "saturation"].includes(block.type) && values.some((v) => v === undefined)) return;
 
         let out = 0;
-        if (block.type === "gain") {
+        if (block.type === "tf" && isStaticTf) {
+          const model = tfModels.get(block.id);
+          const inputVal = values[0] ?? 0;
+          out = model ? outputFromState(model, model.state || [], inputVal) : 0;
+        } else if (block.type === "gain") {
           const gainValue = Number(params.gain) || 1;
           out = (values[0] || 0) * gainValue;
         } else if (block.type === "sum") {
@@ -594,6 +573,37 @@ export function simulate({ state, runtimeInput, statusEl }) {
   statusEl.textContent = "Done";
 }
 
+function resolveLabelSourcesOnce(blocks, outputs, inputMap, labelSinks) {
+  let changed = false;
+  blocks.forEach((block) => {
+    if (block.type !== "labelSource") return;
+    const name = String(block.params.name || "").trim();
+    let nextVal = 0;
+    if (name) {
+      const sinkId = labelSinks.get(name);
+      if (!sinkId) {
+        nextVal = 0;
+      } else {
+        const sinkInputs = inputMap.get(sinkId) || [];
+        const fromId = sinkInputs[0];
+        if (!fromId) {
+          nextVal = 0;
+        } else if (!outputs.has(fromId)) {
+          return;
+        } else {
+          nextVal = outputs.get(fromId) ?? 0;
+        }
+      }
+    }
+    const prev = outputs.get(block.id);
+    outputs.set(block.id, nextVal);
+    if (prev !== nextVal && !(Number.isNaN(prev) && Number.isNaN(nextVal))) {
+      changed = true;
+    }
+  });
+  return changed;
+}
+
 export function drawScope(scopeBlock, time, series, connected) {
   scopeBlock.scopeData = { time, series, connected };
   renderScope(scopeBlock);
@@ -801,11 +811,23 @@ function integrateRK4(state, input, dt) {
   return state + (dt / 6) * (k1 + 2 * k2 + 2 * k3 + k4);
 }
 
+function normalizePoly(values) {
+  const arr = (values || []).map((v) => {
+    const n = Number(v);
+    return Number.isFinite(n) ? n : 0;
+  });
+  let idx = 0;
+  while (idx < arr.length - 1 && Math.abs(arr[idx]) < 1e-12) idx += 1;
+  const trimmed = arr.length ? arr.slice(idx) : [0];
+  const allZero = trimmed.every((v) => Math.abs(v) < 1e-12);
+  return { trimmed: allZero ? [0] : trimmed, allZero };
+}
+
 function buildTfModel(num, den) {
-  const numArr = (num || []).map(Number).filter((v) => Number.isFinite(v));
-  const denArr = (den || []).map(Number).filter((v) => Number.isFinite(v));
-  if (denArr.length === 0) return null;
-  const a0 = denArr[0] || 1;
+  const { trimmed: numArr } = normalizePoly(num);
+  const { trimmed: denArr, allZero: denAllZero } = normalizePoly(den);
+  if (denAllZero) return null;
+  const a0 = denArr[0];
   const denNorm = denArr.map((v) => v / a0);
   const n = denNorm.length - 1;
   if (n === 0) {
@@ -844,9 +866,9 @@ function buildTfModel(num, den) {
 }
 
 function buildDiscreteTf(num, den) {
-  const numArr = (num || []).map(Number).filter((v) => Number.isFinite(v));
-  const denArr = (den || []).map(Number).filter((v) => Number.isFinite(v));
-  const safeDen = denArr.length ? denArr : [1];
+  const { trimmed: numArr } = normalizePoly(num);
+  const { trimmed: denArr, allZero: denAllZero } = normalizePoly(den);
+  const safeDen = denAllZero ? [1] : denArr;
   const a0 = safeDen[0] || 1;
   const denNorm = safeDen.map((v) => v / a0);
   const numNorm = (numArr.length ? numArr : [0]).map((v) => v / a0);
@@ -898,6 +920,13 @@ function addVec(a, b) {
 function scaleVec(vec, scalar) {
   return vec.map((v) => v * scalar);
 }
+
+export const __testOnly = {
+  buildTfModel,
+  outputFromState,
+  integrateTfRK4,
+  resolveLabelSourcesOnce,
+};
 
 function dot(a, b) {
   return a.reduce((acc, v, i) => acc + v * (b[i] || 0), 0);

@@ -32,7 +32,7 @@ const errorBox = document.getElementById("errorBox");
 const debugPanel = document.getElementById("debugPanel");
 const debugLog = document.getElementById("debugLog");
 
-const DEBUG_UI = true;
+const DEBUG_UI = false;
 
 if (debugPanel) debugPanel.hidden = !DEBUG_UI;
 
