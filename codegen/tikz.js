@@ -50,11 +50,17 @@ const formatMath = (value) => {
   return `$${latex}$`;
 };
 
+const formatMathRaw = (value) => {
+  const raw = String(value ?? "");
+  const latex = normalizeLatex(raw);
+  return `$${latex}$`;
+};
+
 const formatLabel = (block) => {
   const params = block.params || {};
   const type = block.type;
   if (type === "labelSource" || type === "labelSink") {
-    return formatMath(params.name || block.id);
+    return formatMathRaw(params.name || block.id);
   }
   if (type === "gain") {
     return formatMath(params.gain ?? 1);
@@ -68,7 +74,7 @@ const formatLabel = (block) => {
   if (type === "zoh") return "$\\mathsf{ZOH}$";
   if (type === "foh") return "$\\mathsf{FOH}$";
   if (type === "ddelay") return "$z^{-1}$";
-  if (type === "delay") return "$e^{-sT}$";
+  if (type === "delay") return "{\\large $e^{-sT}$}";
   if (type === "tf" || type === "dtf") {
     const num = Array.isArray(params.num) ? params.num : [];
     const den = Array.isArray(params.den) ? params.den : [];
@@ -76,7 +82,7 @@ const formatLabel = (block) => {
       const variable = type === "dtf" ? "z^{-1}" : "s";
       const numPoly = formatPolynomial(num, variable);
       const denPoly = formatPolynomial(den, variable);
-      return `{\\Large $\\displaystyle\\frac{${numPoly}}{${denPoly}}$}`;
+      return `{\\large $\\displaystyle\\frac{${numPoly}}{${denPoly}}$}`;
     }
     return "TF";
   }
@@ -213,7 +219,7 @@ export const generateTikz = (diagram) => {
       const lineDir = type === "labelSource" ? 1 : -1;
       const lineX = centerX + lineDir * toCm(20);
       lines.push(`  \\draw[block] (${centerX + lineDir * r},${centerY}) -- (${lineX},${centerY});`);
-      lines.push(`  \\node at (${centerX},${centerY + toCm(10)}) {${label}};`);
+      lines.push(`  \\node at (${centerX},${centerY + toCm(14)}) {${label}};`);
     } else {
       lines.push(`  \\node[block, minimum width=${w}cm, minimum height=${h}cm] (${id}) at (${centerX},${centerY}) {${label}};`);
     }

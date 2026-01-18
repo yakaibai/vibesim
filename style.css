@@ -150,6 +150,10 @@ body::before {
   overflow: auto;
 }
 
+.right-column > .panel-card {
+  flex-shrink: 0;
+}
+
 .sim-panel {
   display: flex;
   flex-direction: column;
@@ -523,7 +527,7 @@ body::before {
 
 .delay-math .math-foreign,
 .delay-math .math-foreign mjx-container {
-  font-size: 28px;
+  font-size: 30px;
 }
 
 .label-math .math-foreign,

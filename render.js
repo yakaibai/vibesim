@@ -285,7 +285,7 @@ function renderCenteredAxesPlot(group, width, height, plotPath) {
 
 function renderLabelNode(block, label, { showNode = true } = {}) {
   const group = block.group;
-  const mathGroup = createSvgElement("g", { class: "label-math", transform: "translate(0,-20)" });
+  const mathGroup = createSvgElement("g", { class: "label-math", transform: "translate(0,-24)" });
   group.appendChild(mathGroup);
   renderTeXMath(mathGroup, label || "", block.width, block.height);
   if (showNode) {
