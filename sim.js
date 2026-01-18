@@ -269,13 +269,17 @@ export function simulate({ state, runtimeInput, statusEl }) {
       return changed;
     };
 
+    const algebraicTypes = new Set(["sum", "mult", "gain", "saturation"]);
     let progress = true;
-    while (progress) {
+    let iter = 0;
+    const maxIter = 50;
+    while (progress && iter < maxIter) {
+      iter += 1;
       progress = false;
       if (resolveLabelSources()) progress = true;
       blocks.forEach((block) => {
         const params = resolvedParams.get(block.id) || {};
-        if (outputs.has(block.id)) return;
+        if (outputs.has(block.id) && !algebraicTypes.has(block.type)) return;
         if (["scope", "integrator", "tf", "delay", "ddelay", "stateSpace", "dstateSpace", "lpf", "hpf", "derivative", "pid", "zoh", "foh", "dtf", "backlash", "fileSink", "labelSink", "labelSource"].includes(block.type)) return;
 
         const inputs = inputMap.get(block.id) || [];
@@ -311,8 +315,11 @@ export function simulate({ state, runtimeInput, statusEl }) {
           out = Math.max(min, Math.min(max, value));
         }
 
+        const prev = outputs.get(block.id);
         outputs.set(block.id, out);
-        progress = true;
+        if (prev !== out && !(Number.isNaN(prev) && Number.isNaN(out))) {
+          progress = true;
+        }
       });
       if (resolveLabelSources()) progress = true;
     }

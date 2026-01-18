@@ -2,6 +2,8 @@ import { createRenderer } from "./render.js";
 import { simulate, renderScope } from "./sim.js";
 import { getSnapOffset, shouldCollapse, shouldExpand, lockAxis } from "./carousel-utils.js";
 import { generateCode } from "./codegen/index.js";
+import { stabilityMargins } from "./control/margins.js";
+import { diagramToFRD } from "./control/diagram.js";
 
 const svg = document.getElementById("svgCanvas");
 const blockLayer = document.getElementById("blockLayer");
@@ -18,6 +20,9 @@ const codegenBtn = document.getElementById("codegenBtn");
 const codegenLang = document.getElementById("codegenLang");
 const codegenDt = document.getElementById("codegenDt");
 const diagramNameInput = document.getElementById("diagramName");
+const marginOutputText = document.getElementById("marginOutputText");
+const marginLoopLabel = document.getElementById("marginLoopLabel");
+const marginLoopSelect = document.getElementById("marginLoopSelect");
 const statusEl = document.getElementById("status");
 const runtimeInput = document.getElementById("runtimeInput");
 const inspectorBody = document.getElementById("inspectorBody");
@@ -66,9 +71,160 @@ const state = {
   variablesText: "",
   variablesDisplay: [],
   diagramName: "vibesim",
+  selectedLoopKey: null,
 };
 
 let fitToDiagram = () => {};
+let updateStabilityPanel = () => {};
+const signalDiagramChanged = () => {
+  window.dispatchEvent(new Event("diagramChanged"));
+};
+
+const listLoopCandidates = () => {
+  const blocks = Array.from(state.blocks.values()).map((block) => ({
+    id: block.id,
+    type: block.type,
+    params: block.params || {},
+  }));
+  const connections = state.connections.map((conn) => ({
+    from: conn.from,
+    to: conn.to,
+    fromIndex: conn.fromIndex ?? 0,
+    toIndex: conn.toIndex ?? 0,
+  }));
+  const traverse = (startId, adj, sumId) => {
+    const visited = new Set();
+    const stack = [startId];
+    while (stack.length) {
+      const id = stack.pop();
+      if (visited.has(id)) continue;
+      visited.add(id);
+      (adj.get(id) || []).forEach((next) => {
+        if (next === sumId) return;
+        stack.push(next);
+      });
+    }
+    return visited;
+  };
+
+  const loops = [];
+  blocks.forEach((block) => {
+    if (block.type !== "sum") return;
+    const sumId = block.id;
+    const signs = Array.isArray(block.params?.signs) ? block.params.signs : [];
+    const forward = new Map();
+    const backward = new Map();
+    blocks.forEach((node) => {
+      forward.set(node.id, []);
+      backward.set(node.id, []);
+    });
+    connections.forEach((conn) => {
+      if (!forward.has(conn.from) || !forward.has(conn.to)) return;
+      if (conn.from === sumId || conn.to === sumId) return;
+      forward.get(conn.from).push(conn.to);
+      backward.get(conn.to).push(conn.from);
+    });
+    const outgoing = connections.filter((conn) => conn.from === sumId);
+    const incoming = connections.filter((conn) => conn.to === sumId);
+    if (!outgoing.length || !incoming.length) return;
+    outgoing.forEach((outConn) => {
+      const forwardReach = traverse(outConn.to, forward, sumId);
+      incoming.forEach((inConn) => {
+        if (!forwardReach.has(inConn.from)) return;
+        const backwardReach = traverse(inConn.from, backward, sumId);
+        const activeIds = new Set(
+          Array.from(forwardReach).filter((id) => backwardReach.has(id))
+        );
+        activeIds.add(outConn.to);
+        activeIds.add(inConn.from);
+        activeIds.delete(sumId);
+        const feedbackSign = Number(signs[inConn.toIndex ?? 0] ?? 1) || 0;
+        const key = `${sumId}:${outConn.to}:${outConn.toIndex ?? 0}->${inConn.from}:${inConn.fromIndex ?? 0}`;
+        loops.push({
+          key,
+          sumId,
+          outConn,
+          inConn,
+          activeIds,
+          feedbackSign,
+        });
+      });
+    });
+  });
+  return loops;
+};
+
+const buildLoopDiagram = (loop) => {
+  if (!loop) return { error: "No loop selected." };
+  const blocks = Array.from(state.blocks.values()).map((block) => ({
+    id: block.id,
+    type: block.type,
+    params: block.params || {},
+  }));
+  const connections = state.connections.map((conn) => ({
+    from: conn.from,
+    to: conn.to,
+    fromIndex: conn.fromIndex ?? 0,
+    toIndex: conn.toIndex ?? 0,
+  }));
+  const activeIds = loop.activeIds || new Set();
+  const loopBlocks = blocks.filter((block) => activeIds.has(block.id));
+  const loopConnections = connections.filter(
+    (conn) =>
+      conn.from !== loop.sumId &&
+      conn.to !== loop.sumId &&
+      activeIds.has(conn.from) &&
+      activeIds.has(conn.to)
+  );
+
+  const loopInputId = "loop_input";
+  const loopOutputId = "loop_output";
+  const loopSignId = "loop_feedback_sign";
+  loopBlocks.push({ id: loopInputId, type: "labelSource", params: { name: "loop_in" } });
+  const loopSignGain = loop.feedbackSign === 0 ? 0 : -loop.feedbackSign;
+  if (loopSignGain !== 1) {
+    loopBlocks.push({ id: loopSignId, type: "gain", params: { gain: loopSignGain } });
+  }
+  loopBlocks.push({ id: loopOutputId, type: "labelSink", params: { name: "loop_out", showNode: true } });
+  loopConnections.push({
+    from: loopInputId,
+    to: loop.outConn.to,
+    fromIndex: 0,
+    toIndex: loop.outConn.toIndex ?? 0,
+  });
+  if (loopSignGain !== 1) {
+    loopConnections.push({
+      from: loop.inConn.from,
+      to: loopSignId,
+      fromIndex: loop.inConn.fromIndex ?? 0,
+      toIndex: 0,
+    });
+    loopConnections.push({
+      from: loopSignId,
+      to: loopOutputId,
+      fromIndex: 0,
+      toIndex: 0,
+    });
+  } else {
+    loopConnections.push({
+      from: loop.inConn.from,
+      to: loopOutputId,
+      fromIndex: loop.inConn.fromIndex ?? 0,
+      toIndex: 0,
+    });
+  }
+  return {
+    diagram: {
+      blocks: loopBlocks,
+      connections: loopConnections,
+    },
+    summary: {
+      sumId: loop.sumId,
+      forward: loop.outConn.to,
+      feedback: loop.inConn.from,
+    },
+  };
+};
 
 const focusPropertiesPanel = () => {
   if (!window.matchMedia("(max-width: 900px)").matches) return;
@@ -87,10 +243,12 @@ const renderer = createRenderer({
   onSelectBlock: (blockId) => {
     renderInspector(blockId);
     focusPropertiesPanel();
+    updateStabilityPanel();
   },
   onSelectConnection: (connectionId) => {
     renderInspector(connectionId);
     focusPropertiesPanel();
+    updateStabilityPanel();
   },
 });
 
@@ -231,6 +389,9 @@ function renderInspector(block) {
         const num = Number(v);
         return Number.isFinite(num) ? num : v;
       });
+  const wireDiagramUpdate = () => {
+    signalDiagramChanged();
+  };
 
   if (block.type === "constant") {
     inspectorBody.innerHTML = `
@@ -558,7 +719,7 @@ function renderInspector(block) {
       select.value = String(signs[idx] ?? 1);
       select.addEventListener("change", () => {
         if (!block.params.signs) block.params.signs = [1, 1, 1];
-      block.params.signs[idx] = Number(select.value);
+        block.params.signs[idx] = Number(select.value);
         renderer.updateBlockLabel(block);
       });
     });
@@ -787,6 +948,11 @@ function renderInspector(block) {
   } else {
     inspectorBody.textContent = "No editable parameters for this block.";
   }
+
+  inspectorBody.querySelectorAll("input, select, textarea").forEach((el) => {
+    el.addEventListener("input", wireDiagramUpdate);
+    el.addEventListener("change", wireDiagramUpdate);
+  });
 }
 
 function clearWorkspace() {
@@ -865,6 +1031,7 @@ function loadDiagram(data) {
 
   renderer.forceFullRoute(3000);
   fitToDiagram();
+  if (typeof updateStabilityPanel === "function") updateStabilityPanel();
 }
 
 function toYAML(data) {
@@ -1052,6 +1219,128 @@ function init() {
       state.diagramName = diagramNameInput.value.trim() || "vibesim";
     });
   }
+  if (marginLoopSelect) {
+    marginLoopSelect.addEventListener("change", () => {
+      state.selectedLoopKey = marginLoopSelect.value || null;
+      updateStabilityPanel();
+    });
+  }
+  updateStabilityPanel = () => {
+    if (!marginOutputText || !marginLoopLabel) return;
+    const loops = listLoopCandidates();
+    const noneValue = "none";
+    if (!loops.length) {
+      if (marginLoopSelect) {
+        marginLoopSelect.innerHTML = "";
+      }
+      marginLoopLabel.textContent = "No loops detected.";
+      marginOutputText.textContent = "No loops detected.";
+      if (renderer.setLoopHighlight) renderer.setLoopHighlight(null, null);
+      return;
+    }
+    const loopKeys = new Set(loops.map((loop) => loop.key));
+    let selectedKey = state.selectedLoopKey;
+    if (!selectedKey || !loopKeys.has(selectedKey)) selectedKey = noneValue;
+    state.selectedLoopKey = selectedKey;
+    if (marginLoopSelect) {
+      marginLoopSelect.innerHTML = "";
+      const noneOption = document.createElement("option");
+      noneOption.value = noneValue;
+      noneOption.textContent = "None";
+      marginLoopSelect.appendChild(noneOption);
+      loops.forEach((loop) => {
+        const option = document.createElement("option");
+        option.value = loop.key;
+        const signText = loop.feedbackSign === 1 ? "" : ` (fb ${loop.feedbackSign})`;
+        option.textContent = `Sum ${loop.sumId}: ${loop.outConn.to} -> ${loop.inConn.from}${signText}`;
+        marginLoopSelect.appendChild(option);
+      });
+      marginLoopSelect.value = selectedKey;
+    }
+    if (selectedKey === noneValue) {
+      marginLoopLabel.textContent = "None selected.";
+      marginOutputText.textContent = "No loop selected.";
+      if (renderer.setLoopHighlight) renderer.setLoopHighlight(null, null);
+      return;
+    }
+    const selectedLoop = loops.find((loop) => loop.key === selectedKey) || loops[0];
+    const loop = buildLoopDiagram(selectedLoop);
+    if (loop.error) {
+      marginLoopLabel.textContent = "Loop";
+      marginOutputText.textContent = `Error: ${loop.error}`;
+      if (renderer.setLoopHighlight) renderer.setLoopHighlight(null, null);
+      return;
+    }
+    const diagram = { ...loop.diagram, variables: state.variables || {} };
+    const activeBlocks = diagram.blocks.map((block) => ({
+      id: block.id,
+      type: block.type,
+      params: block.params || {},
+    }));
+    if (renderer.setLoopHighlight) {
+      const highlightBlocks = new Set(selectedLoop.activeIds || []);
+      highlightBlocks.add(selectedLoop.sumId);
+      const highlightConnections = new Set();
+      state.connections.forEach((conn) => {
+        const fromIdx = conn.fromIndex ?? 0;
+        const toIdx = conn.toIndex ?? 0;
+        if (conn.from === selectedLoop.sumId &&
+            conn.to === selectedLoop.outConn.to &&
+            fromIdx === (selectedLoop.outConn.fromIndex ?? 0) &&
+            toIdx === (selectedLoop.outConn.toIndex ?? 0)) {
+          highlightConnections.add(conn);
+          return;
+        }
+        if (conn.to === selectedLoop.sumId &&
+            conn.from === selectedLoop.inConn.from &&
+            fromIdx === (selectedLoop.inConn.fromIndex ?? 0) &&
+            toIdx === (selectedLoop.inConn.toIndex ?? 0)) {
+          highlightConnections.add(conn);
+          return;
+        }
+        if (
+          selectedLoop.activeIds &&
+          selectedLoop.activeIds.has(conn.from) &&
+          selectedLoop.activeIds.has(conn.to)
+        ) {
+          highlightConnections.add(conn);
+        }
+      });
+      renderer.setLoopHighlight(highlightBlocks, highlightConnections);
+    }
+    try {
+      const frd = diagramToFRD(diagram, { input: "loop_in", output: "loop_out" });
+      const [gm, pm, sm, wpc, wgc, wms] = stabilityMargins({
+        diagram,
+        input: "loop_in",
+        output: "loop_out",
+      });
+      const omegaMin = frd.omega[0];
+      const omegaMax = frd.omega[frd.omega.length - 1];
+      const formatNumber = (value) => {
+        if (!Number.isFinite(value)) return String(value);
+        return value.toFixed(3);
+      };
+      const formatDb = (value) => {
+        if (!Number.isFinite(value) || value <= 0) return "NaN";
+        return formatNumber(20 * Math.log10(value));
+      };
+      marginLoopLabel.textContent = `Sum ${loop.summary.sumId}: forward ${loop.summary.forward} -> feedback ${loop.summary.feedback}`;
+      marginOutputText.textContent =
+        `omega=[${formatNumber(omegaMin)}, ${formatNumber(omegaMax)}] (${frd.omega.length} pts)\n` +
+        `gm=${formatNumber(gm)} (${formatDb(gm)} dB)\n` +
+        `pm=${formatNumber(pm)} deg\n` +
+        `sm=${formatNumber(sm)} (${formatDb(sm)} dB)\n` +
+        `wpc=${formatNumber(wpc)}\n` +
+        `wgc=${formatNumber(wgc)}\n` +
+        `wms=${formatNumber(wms)}`;
+    } catch (err) {
+      marginLoopLabel.textContent = `Sum ${sumBlock.id}`;
+      marginOutputText.textContent = `Error: ${err?.message || err}`;
+    }
+  };
+  window.addEventListener("diagramChanged", updateStabilityPanel);
+  updateStabilityPanel();
   const exampleFiles = ["examples/inverted_pendulum.yaml", "examples/emf.yaml"];
   if (examplesList) {
     examplesList.innerHTML = "";
@@ -1297,14 +1586,15 @@ function init() {
   const variablesPreview = document.getElementById("variablesPreview");
   const updateVariables = () => {
     state.variablesText = variablesInput?.value || "";
-  const parsed = parseVariables(state.variablesText);
-  state.variables = parsed.vars;
-  state.variablesDisplay = parsed.display;
-  if (variablesPreview) {
-    const entries = state.variablesDisplay.join("\n");
-    variablesPreview.textContent = entries || "No variables defined.";
-  }
+    const parsed = parseVariables(state.variablesText);
+    state.variables = parsed.vars;
+    state.variablesDisplay = parsed.display;
+    if (variablesPreview) {
+      const entries = state.variablesDisplay.join("\n");
+      variablesPreview.textContent = entries || "No variables defined.";
+    }
     statusEl.textContent = "Variables updated";
+    signalDiagramChanged();
   };
   if (applyVariablesBtn) applyVariablesBtn.addEventListener("click", updateVariables);
   if (variablesInput) variablesInput.addEventListener("change", updateVariables);
@@ -1319,6 +1609,7 @@ function init() {
       try {
         renderer.createBlock(type, centerX + offset, centerY + offset);
         statusEl.textContent = `Added ${type}`;
+        updateStabilityPanel();
       } catch (error) {
         statusEl.textContent = `Error adding ${type}`;
         if (errorBox) {
@@ -1397,11 +1688,13 @@ function init() {
       renderer.selectBlock(null);
       renderInspector(null);
       statusEl.textContent = "Block deleted";
+      updateStabilityPanel();
     } else if (state.selectedConnection) {
       renderer.deleteConnection(state.selectedConnection);
       renderer.selectConnection(null);
       renderInspector(null);
       statusEl.textContent = "Wire deleted";
+      updateStabilityPanel();
     }
   });
 

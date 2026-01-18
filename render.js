@@ -2156,6 +2156,9 @@ export function createRenderer({ svg, blockLayer, wireLayer, overlayLayer, state
     state.routingDirty = true;
     if (state.dirtyConnections) state.dirtyConnections.add(conn);
     updateConnections();
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new CustomEvent("diagramChanged"));
+    }
   }
 
   function updateConnections(force = false) {
@@ -3157,10 +3160,13 @@ export function createRenderer({ svg, blockLayer, wireLayer, overlayLayer, state
     if (idx >= 0) {
       state.connections[idx].path.remove();
       state.connections[idx].hitPath?.remove();
-      state.connections.splice(idx, 1);
+    state.connections.splice(idx, 1);
     }
     state.routingDirty = true;
     updateConnections();
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new CustomEvent("diagramChanged"));
+    }
   }
 
   function deleteBlock(blockId) {
@@ -3172,6 +3178,9 @@ export function createRenderer({ svg, blockLayer, wireLayer, overlayLayer, state
     state.blocks.delete(blockId);
     state.routingDirty = true;
     updateConnections();
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new CustomEvent("diagramChanged"));
+    }
   }
 
   function updateBlockLabel(block) {
@@ -3311,6 +3320,18 @@ export function createRenderer({ svg, blockLayer, wireLayer, overlayLayer, state
     return { x: svgPoint.x, y: svgPoint.y };
   }
 
+  function setLoopHighlight(blockIds, connections) {
+    const blockSet = blockIds ? new Set(blockIds) : null;
+    const connSet = connections ? new Set(connections) : null;
+    state.blocks.forEach((block) => {
+      block.group.classList.toggle("loop-highlight", Boolean(blockSet && blockSet.has(block.id)));
+    });
+    state.connections.forEach((conn) => {
+      const active = Boolean(connSet && connSet.has(conn));
+      conn.path.classList.toggle("loop-highlight", active);
+    });
+  }
+
   return {
     createBlock,
     createConnection,
@@ -3329,5 +3350,6 @@ export function createRenderer({ svg, blockLayer, wireLayer, overlayLayer, state
     clientToSvg,
     forceFullRoute,
     resizeBlock,
+    setLoopHighlight,
   };
 }

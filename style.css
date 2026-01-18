@@ -162,6 +162,23 @@ body::before {
   gap: 8px;
 }
 
+.stability-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.margin-output {
+  background: #f6eddc;
+  border: 1px solid #d6c3a4;
+  border-radius: 8px;
+  padding: 10px;
+  font-size: 12px;
+  white-space: pre-wrap;
+  max-height: 220px;
+  overflow: auto;
+}
+
 .examples-panel {
   display: flex;
   flex-direction: column;
@@ -414,6 +431,14 @@ body::before {
   stroke-width: 3;
 }
 
+.svg-block.loop-highlight .block-body,
+.svg-block.loop-highlight .sum-circle,
+.svg-block.loop-highlight .gain-triangle,
+.svg-block.loop-highlight .file-icon-stroke {
+  stroke: #2b7a78;
+  stroke-width: 3;
+}
+
 .svg-block .block-text {
   font-size: 14px;
   font-weight: 700;
@@ -609,6 +634,12 @@ body::before {
   stroke: #dc2626;
   stroke-width: 2;
   color: #dc2626;
+}
+
+.wire.loop-highlight {
+  stroke: #2b7a78;
+  stroke-width: 3;
+  color: #2b7a78;
 }
 
 .wire-arrow {
