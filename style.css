@@ -162,6 +162,25 @@ body::before {
   gap: 8px;
 }
 
+.codegen-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
+}
+
+.codegen-row .param {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.param-inline {
+  flex: 0 0 auto;
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  white-space: nowrap;
+}
+
 .stability-panel {
   display: flex;
   flex-direction: column;
@@ -774,13 +793,18 @@ body::before {
 
 .variables-panel {
   margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 100%;
+  overflow: auto;
 }
 
 .variables-panel textarea {
   width: 100%;
   min-height: 120px;
+  max-height: 160px;
   resize: vertical;
-  margin-bottom: 8px;
   font-family: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
   font-size: 12px;
   padding: 8px;
@@ -794,6 +818,7 @@ body::before {
   color: #3c3c3c;
   line-height: 1.4;
   white-space: pre-wrap;
+  margin-top: 6px;
 }
 
 .inspector h3 {
@@ -958,6 +983,12 @@ body::before {
     background: #f7eddf;
     overflow: auto;
     touch-action: pan-y;
+  }
+
+  .panel-carousel .variables-panel {
+    overflow: auto;
+    touch-action: pan-y;
+    -webkit-overflow-scrolling: touch;
   }
 
   .workspace {

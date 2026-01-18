@@ -11,7 +11,6 @@ const wireLayer = document.getElementById("wireLayer");
 const overlayLayer = document.getElementById("overlayLayer");
 const runBtn = document.getElementById("runBtn");
 const runButtons = document.querySelectorAll('[data-action="run"]');
-const fullRouteBtn = document.getElementById("fullRouteBtn");
 const clearBtn = document.getElementById("clearBtn");
 const saveBtn = document.getElementById("saveBtn");
 const loadBtn = document.getElementById("loadBtn");
@@ -19,9 +18,9 @@ const loadInput = document.getElementById("loadInput");
 const codegenBtn = document.getElementById("codegenBtn");
 const codegenLang = document.getElementById("codegenLang");
 const codegenDt = document.getElementById("codegenDt");
+const codegenIncludeMain = document.getElementById("codegenIncludeMain");
 const diagramNameInput = document.getElementById("diagramName");
 const marginOutputText = document.getElementById("marginOutputText");
-const marginLoopLabel = document.getElementById("marginLoopLabel");
 const marginLoopSelect = document.getElementById("marginLoopSelect");
 const statusEl = document.getElementById("status");
 const runtimeInput = document.getElementById("runtimeInput");
@@ -31,8 +30,9 @@ const examplesList = document.getElementById("examplesList");
 const rotateSelectionBtn = document.getElementById("rotateSelection");
 const errorBox = document.getElementById("errorBox");
 const debugPanel = document.getElementById("debugPanel");
+const debugLog = document.getElementById("debugLog");
 
-const DEBUG_UI = false;
+const DEBUG_UI = true;
 
 if (debugPanel) debugPanel.hidden = !DEBUG_UI;
 
@@ -253,16 +253,6 @@ const renderer = createRenderer({
     updateStabilityPanel();
   },
 });
-
-if (fullRouteBtn) {
-  fullRouteBtn.addEventListener("click", () => {
-    try {
-      renderer.forceFullRoute(2000);
-    } catch (error) {
-      statusEl.textContent = `Reroute error: ${error?.message || error}`;
-    }
-  });
-}
 
 const downloadFile = (name, content) => {
   const blob = new Blob([content], { type: "text/plain" });
@@ -1228,14 +1218,13 @@ function init() {
     });
   }
   updateStabilityPanel = () => {
-    if (!marginOutputText || !marginLoopLabel) return;
+    if (!marginOutputText) return;
     const loops = listLoopCandidates();
     const noneValue = "none";
     if (!loops.length) {
       if (marginLoopSelect) {
         marginLoopSelect.innerHTML = "";
       }
-      marginLoopLabel.textContent = "No loops detected.";
       marginOutputText.textContent = "No loops detected.";
       if (renderer.setLoopHighlight) renderer.setLoopHighlight(null, null);
       return;
@@ -1260,7 +1249,6 @@ function init() {
       marginLoopSelect.value = selectedKey;
     }
     if (selectedKey === noneValue) {
-      marginLoopLabel.textContent = "None selected.";
       marginOutputText.textContent = "No loop selected.";
       if (renderer.setLoopHighlight) renderer.setLoopHighlight(null, null);
       return;
@@ -1268,7 +1256,6 @@ function init() {
     const selectedLoop = loops.find((loop) => loop.key === selectedKey) || loops[0];
     const loop = buildLoopDiagram(selectedLoop);
     if (loop.error) {
-      marginLoopLabel.textContent = "Loop";
       marginOutputText.textContent = `Error: ${loop.error}`;
       if (renderer.setLoopHighlight) renderer.setLoopHighlight(null, null);
       return;
@@ -1327,7 +1314,6 @@ function init() {
         if (!Number.isFinite(value) || value <= 0) return "NaN";
         return formatNumber(20 * Math.log10(value));
       };
-      marginLoopLabel.textContent = `Sum ${loop.summary.sumId}: forward ${loop.summary.forward} -> feedback ${loop.summary.feedback}`;
       marginOutputText.textContent =
         `omega=[${formatNumber(omegaMin)}, ${formatNumber(omegaMax)}] (${frd.omega.length} pts)\n` +
         `gm=${formatNumber(gm)} (${formatDb(gm)} dB)\n` +
@@ -1337,7 +1323,6 @@ function init() {
         `wgc=${formatNumber(wgc)}\n` +
         `wms=${formatNumber(wms)}`;
     } catch (err) {
-      marginLoopLabel.textContent = `Sum ${sumBlock.id}`;
       marginOutputText.textContent = `Error: ${err?.message || err}`;
     }
   };
@@ -1632,18 +1617,37 @@ function init() {
   if (codegenBtn) {
     codegenBtn.addEventListener("click", () => {
       const lang = codegenLang?.value || "c";
-      const content = generateCode({
-        lang,
-        sampleTime: codegenDt?.value ?? 0.01,
-        diagram: {
-          blocks: Array.from(state.blocks.values()),
-          connections: state.connections.slice(),
-          variables: state.variables || {},
-        },
-      });
-      const baseName = sanitizeFilename(state.diagramName);
-      const ext = lang === "python" ? "py" : lang === "tikz" ? "tex" : "c";
-      downloadFile(`${baseName}.${ext}`, content);
+      const includeMain = codegenIncludeMain ? codegenIncludeMain.checked : true;
+      const diagram = {
+        blocks: Array.from(state.blocks.values()),
+        connections: state.connections.slice(),
+        variables: state.variables || {},
+      };
+      if (debugLog) {
+        debugLog.textContent = [
+          "[codegen] start",
+          `lang=${lang}`,
+          `includeMain=${includeMain}`,
+          `sampleTime=${codegenDt?.value ?? 0.01}`,
+          `blocks=${diagram.blocks.length} connections=${diagram.connections.length}`,
+        ].join("\n");
+      }
+      try {
+        const content = generateCode({
+          lang,
+          sampleTime: codegenDt?.value ?? 0.01,
+          includeMain,
+          diagram,
+        });
+        const baseName = sanitizeFilename(state.diagramName);
+        const ext = lang === "python" ? "py" : lang === "tikz" ? "tex" : "c";
+        downloadFile(`${baseName}.${ext}`, content);
+        if (debugLog) debugLog.textContent += `\n[codegen] ok size=${content.length}`;
+      } catch (error) {
+        const message = error?.message || error;
+        if (debugLog) debugLog.textContent += `\n[codegen] error: ${message}`;
+        if (statusEl) statusEl.textContent = `Codegen error: ${message}`;
+      }
     });
   }
   clearBtn.addEventListener("click", clearWorkspace);

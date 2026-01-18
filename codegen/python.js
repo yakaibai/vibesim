@@ -56,7 +56,7 @@ const buildExecutionOrder = (blocks, connections) => {
   return order;
 };
 
-export const generatePython = (diagram, { sampleTime = 0.01 } = {}) => {
+export const generatePython = (diagram, { sampleTime = 0.01, includeMain = true } = {}) => {
   const blocks = diagram.blocks || [];
   const connections = diagram.connections || [];
   const variables = diagram.variables || {};
@@ -357,77 +357,79 @@ export const generatePython = (diagram, { sampleTime = 0.01 } = {}) => {
   lines.push("def run_step(state, inputs=None, outputs=None, t=0.0, dt=None):");
   lines.push("    return run_step_internal(state, inputs or {}, outputs, t, dt)");
   lines.push("");
-  lines.push("def _read_input_csv(path):");
-  lines.push("    import csv");
-  lines.push("    if not path:");
-  lines.push("        return [], []");
-  lines.push("    with open(path, newline='') as f:");
-  lines.push("        reader = csv.DictReader(f)");
-  lines.push("        times = []");
-  lines.push("        rows = []");
-  lines.push("        for row in reader:");
-  lines.push("            t = float(row.get('t', row.get('time', 0.0)) or 0.0)");
-  lines.push("            vals = {}");
-  labelSources.forEach((b) => {
-    const name = sanitizeId(b.params?.name || b.id);
-    lines.push(`            vals["${name}"] = float(row.get("${name}", 0.0) or 0.0)`);
-  });
-  if (!labelSources.length) {
-    lines.push("            vals['_unused'] = 0.0");
+  if (includeMain) {
+    lines.push("def _read_input_csv(path):");
+    lines.push("    import csv");
+    lines.push("    if not path:");
+    lines.push("        return [], []");
+    lines.push("    with open(path, newline='') as f:");
+    lines.push("        reader = csv.DictReader(f)");
+    lines.push("        times = []");
+    lines.push("        rows = []");
+    lines.push("        for row in reader:");
+    lines.push("            t = float(row.get('t', row.get('time', 0.0)) or 0.0)");
+    lines.push("            vals = {}");
+    labelSources.forEach((b) => {
+      const name = sanitizeId(b.params?.name || b.id);
+      lines.push(`            vals["${name}"] = float(row.get("${name}", 0.0) or 0.0)`);
+    });
+    if (!labelSources.length) {
+      lines.push("            vals['_unused'] = 0.0");
+    }
+    lines.push("            times.append(t)");
+    lines.push("            rows.append(vals)");
+    lines.push("    return times, rows");
+    lines.push("");
+    lines.push("def _write_output_header(writer):");
+    lines.push("    header = ['t']");
+    labelSinks.forEach((b) => {
+      const name = sanitizeId(b.params?.name || b.id);
+      lines.push(`    header.append("${name}")`);
+    });
+    if (!labelSinks.length) {
+      lines.push("    header.append('_unused')");
+    }
+    lines.push("    writer.writerow(header)");
+    lines.push("");
+    lines.push("def main(argv=None):");
+    lines.push("    import argparse, sys, csv");
+    lines.push("    parser = argparse.ArgumentParser()");
+    lines.push("    parser.add_argument('-t', type=float, default=1.0)");
+    lines.push("    parser.add_argument('-i', dest='input', default=None)");
+    lines.push("    parser.add_argument('-o', dest='output', default=None)");
+    lines.push("    args = parser.parse_args(argv)");
+    lines.push(`    dt = ${resolveNumeric(sampleTime, variables) || 0.01}`);
+    lines.push("    state = init_model_state()");
+    lines.push("    times, rows = _read_input_csv(args.input)");
+    lines.push("    idx = 0");
+    lines.push("    out_f = open(args.output, 'w', newline='') if args.output else sys.stdout");
+    lines.push("    writer = csv.writer(out_f)");
+    lines.push("    _write_output_header(writer)");
+    lines.push("    t = 0.0");
+    lines.push("    while t <= args.t + 1e-9:");
+    lines.push("        if times:");
+    lines.push("            while idx + 1 < len(times) and times[idx + 1] <= t:");
+    lines.push("                idx += 1");
+    lines.push("            inputs = rows[idx]");
+    lines.push("        else:");
+    lines.push("            inputs = {}");
+    lines.push("        outputs = {}");
+    lines.push("        run_step(state, inputs, outputs, t)");
+    lines.push("        row = [f'{t:.6f}']");
+    labelSinks.forEach((b) => {
+      const name = sanitizeId(b.params?.name || b.id);
+      lines.push(`        row.append(f\"{outputs.get('${name}', 0.0):.6f}\")`);
+    });
+    if (!labelSinks.length) {
+      lines.push("        row.append('0.000000')");
+    }
+    lines.push("        writer.writerow(row)");
+    lines.push("        t += dt");
+    lines.push("    if args.output: out_f.close()");
+    lines.push("");
+    lines.push("if __name__ == '__main__':");
+    lines.push("    main()");
+    lines.push("");
   }
-  lines.push("            times.append(t)");
-  lines.push("            rows.append(vals)");
-  lines.push("    return times, rows");
-  lines.push("");
-  lines.push("def _write_output_header(writer):");
-  lines.push("    header = ['t']");
-  labelSinks.forEach((b) => {
-    const name = sanitizeId(b.params?.name || b.id);
-    lines.push(`    header.append("${name}")`);
-  });
-  if (!labelSinks.length) {
-    lines.push("    header.append('_unused')");
-  }
-  lines.push("    writer.writerow(header)");
-  lines.push("");
-  lines.push("def main(argv=None):");
-  lines.push("    import argparse, sys, csv");
-  lines.push("    parser = argparse.ArgumentParser()");
-  lines.push("    parser.add_argument('-t', type=float, default=1.0)");
-  lines.push("    parser.add_argument('-i', dest='input', default=None)");
-  lines.push("    parser.add_argument('-o', dest='output', default=None)");
-  lines.push("    args = parser.parse_args(argv)");
-  lines.push(`    dt = ${resolveNumeric(sampleTime, variables) || 0.01}`);
-  lines.push("    state = init_model_state()");
-  lines.push("    times, rows = _read_input_csv(args.input)");
-  lines.push("    idx = 0");
-  lines.push("    out_f = open(args.output, 'w', newline='') if args.output else sys.stdout");
-  lines.push("    writer = csv.writer(out_f)");
-  lines.push("    _write_output_header(writer)");
-  lines.push("    t = 0.0");
-  lines.push("    while t <= args.t + 1e-9:");
-  lines.push("        if times:");
-  lines.push("            while idx + 1 < len(times) and times[idx + 1] <= t:");
-  lines.push("                idx += 1");
-  lines.push("            inputs = rows[idx]");
-  lines.push("        else:");
-  lines.push("            inputs = {}");
-  lines.push("        outputs = {}");
-  lines.push("        run_step(state, inputs, outputs, t)");
-  lines.push("        row = [f'{t:.6f}']");
-  labelSinks.forEach((b) => {
-    const name = sanitizeId(b.params?.name || b.id);
-    lines.push(`        row.append(f\"{outputs.get('${name}', 0.0):.6f}\")`);
-  });
-  if (!labelSinks.length) {
-    lines.push("        row.append('0.000000')");
-  }
-  lines.push("        writer.writerow(row)");
-  lines.push("        t += dt");
-  lines.push("    if args.output: out_f.close()");
-  lines.push("");
-  lines.push("if __name__ == '__main__':");
-  lines.push("    main()");
-  lines.push("");
   return lines.join("\n");
 };
