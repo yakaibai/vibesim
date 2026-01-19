@@ -322,6 +322,26 @@ body::before {
   margin: 0 0 6px;
 }
 
+.about-panel p {
+  margin: 0 0 8px;
+  font-size: 0.9rem;
+  line-height: 1.4;
+}
+
+.about-panel p:last-child {
+  margin-bottom: 0;
+}
+
+.about-panel a {
+  color: var(--accent);
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.about-panel a:hover {
+  text-decoration: underline;
+}
+
 #debugLog {
   background: #1b1a17;
   color: #f5e8d4;
