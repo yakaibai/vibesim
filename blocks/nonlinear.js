@@ -47,10 +47,31 @@ export const createNonlinearTemplates = (helpers) => {
         const midY = (axisTop + axisBottom) / 2;
         const leftX = axisLeft + 6;
         const rightX = axisRight - 6;
-        const curveEndX = midX + 6;
-        const curveEndY = midY - 8;
-        const dashedPath = `M${leftX} ${midY + 14} C${leftX + 6} ${midY + 10} ${midX - 4} ${midY + 2} ${curveEndX} ${curveEndY}`;
-        const solidPath = `M${leftX} ${midY + 14} C${leftX + 8} ${midY + 10} ${midX - 2} ${midY + 2} ${curveEndX} ${curveEndY} L${rightX} ${midY - 14}`;
+        const yStart = midY + 16;
+        const yEnd = midY - 16;
+        const dashedC1X = leftX + (rightX - leftX) * 0.2;
+        const dashedC2X = leftX + (rightX - leftX) * 0.85;
+        const dashedC1Y = yStart - 1;
+        const dashedC2Y = yEnd + 12;
+        const tBreak = 0.55;
+        const omt = 1 - tBreak;
+        const omt2 = omt * omt;
+        const omt3 = omt2 * omt;
+        const t2 = tBreak * tBreak;
+        const t3 = t2 * tBreak;
+        const breakX =
+          omt3 * leftX +
+          3 * omt2 * tBreak * dashedC1X +
+          3 * omt * t2 * dashedC2X +
+          t3 * rightX;
+        const breakY =
+          omt3 * yStart +
+          3 * omt2 * tBreak * dashedC1Y +
+          3 * omt * t2 * dashedC2Y +
+          t3 * yEnd;
+        const solidEndY = midY - 6;
+        const dashedPath = `M${leftX} ${yStart} C${dashedC1X} ${dashedC1Y} ${dashedC2X} ${dashedC2Y} ${rightX} ${yEnd}`;
+        const solidPath = `M${leftX} ${yStart} C${dashedC1X} ${dashedC1Y} ${dashedC2X} ${dashedC2Y} ${breakX} ${breakY} L${rightX} ${solidEndY}`;
         renderCenteredAxesPlot(block.group, block.width, block.height, null);
         block.group.appendChild(
           createSvgElement("path", {
@@ -79,21 +100,48 @@ export const createNonlinearTemplates = (helpers) => {
         const axisBottom = block.height - 14;
         const midX = (axisLeft + axisRight) / 2;
         const midY = (axisTop + axisBottom) / 2;
-        const leftX = axisLeft + 6;
-        const rightX = axisRight - 6;
-        const gap = 8;
-        const slope = 10;
-        const lowY = midY + slope;
-        const highY = midY - slope;
-        const lowerPath = `M${leftX} ${lowY} L${midX - gap} ${lowY} L${midX + gap} ${highY} L${rightX} ${highY}`;
-        const upperPath = `M${leftX} ${lowY + 6} L${midX - gap} ${lowY + 6} L${midX + gap} ${highY + 6} L${rightX} ${highY + 6}`;
+        const mapX = (val) => midX + val * ((axisRight - axisLeft) / 2);
+        const mapY = (val) => midY - val * ((axisBottom - axisTop) / 2);
+        const line1 = { x1: -0.9, y1: -0.9, x2: -0.1, y2: 0.4 };
+        const line2 = { x1: 0.1, y1: -0.4, x2: 0.9, y2: 0.9 };
+        const solveX = (line, y) => {
+          const dy = line.y2 - line.y1;
+          if (Math.abs(dy) < 1e-6) return line.x1;
+          return line.x1 + ((y - line.y1) * (line.x2 - line.x1)) / dy;
+        };
         renderCenteredAxesPlot(block.group, block.width, block.height, null);
         block.group.appendChild(
-          createSvgElement("path", { d: lowerPath, class: "source-plot" })
+          createSvgElement("line", {
+            x1: mapX(line1.x1),
+            y1: mapY(line1.y1),
+            x2: mapX(line1.x2),
+            y2: mapY(line1.y2),
+            class: "source-plot",
+          })
         );
         block.group.appendChild(
-          createSvgElement("path", { d: upperPath, class: "source-plot" })
+          createSvgElement("line", {
+            x1: mapX(line2.x1),
+            y1: mapY(line2.y1),
+            x2: mapX(line2.x2),
+            y2: mapY(line2.y2),
+            class: "source-plot",
+          })
         );
+        const ys = [-0.4, -0.3, 0.3, 0.4];
+        ys.forEach((y) => {
+          const xLeft = solveX(line1, y);
+          const xRight = solveX(line2, y);
+          block.group.appendChild(
+            createSvgElement("line", {
+              x1: mapX(xLeft),
+              y1: mapY(y),
+              x2: mapX(xRight),
+              y2: mapY(y),
+              class: "source-plot",
+            })
+          );
+        });
       },
     },
   };
