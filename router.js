@@ -1015,15 +1015,169 @@ function applyRouter2Result(state, connections, result) {
       }
       return;
     }
-    const points = wire.points.map((pt) => ({
+    let points = wire.points.map((pt) => ({
       x: pt.x * GRID_SIZE,
       y: pt.y * GRID_SIZE,
     }));
+    points = enforcePortStubs(state, conn.__ref, points);
     conn.__ref.points = points;
     const d = pointsToPath(points);
     paths.set(conn.__ref, d);
   });
   return paths;
+}
+
+function enforcePortStubs(state, conn, points) {
+  if (!points || points.length < 2) return points;
+  const fromBlock = state.blocks.get(conn.from);
+  const toBlock = state.blocks.get(conn.to);
+  if (!fromBlock || !toBlock) return points;
+  const fromIndex = conn.fromIndex ?? 0;
+  const toIndex = conn.toIndex ?? 0;
+  const fromPort = fromBlock.ports.find((p) => p.type === "out" && p.index === fromIndex);
+  const toPort = toBlock.ports.find((p) => p.type === "in" && p.index === toIndex);
+  if (!fromPort || !toPort) return points;
+
+  const fromPos = rotatePoint({ x: fromBlock.x + fromPort.x, y: fromBlock.y + fromPort.y }, fromBlock);
+  const toPos = rotatePoint({ x: toBlock.x + toPort.x, y: toBlock.y + toPort.y }, toBlock);
+  const fromPortPos = { x: snap(fromPos.x), y: snap(fromPos.y) };
+  const toPortPos = { x: snap(toPos.x), y: snap(toPos.y) };
+  const fromSide = getPortSide(fromBlock, fromPos);
+  const toSide = getPortSide(toBlock, toPos);
+
+  const result = points.slice();
+  if (result[0].x !== fromPortPos.x || result[0].y !== fromPortPos.y) {
+    result.unshift(fromPortPos);
+  }
+  const next = result[1];
+  const startStub = buildStubPoint(fromPortPos, fromSide);
+  if (!isValidStub(fromPortPos, next, fromSide)) {
+    result.splice(1, 0, startStub);
+    const afterStub = result[2];
+    if (afterStub && startStub.x !== afterStub.x && startStub.y !== afterStub.y) {
+      if (fromSide === "left" || fromSide === "right") {
+        result.splice(2, 0, { x: startStub.x, y: afterStub.y });
+      } else {
+        result.splice(2, 0, { x: afterStub.x, y: startStub.y });
+      }
+    }
+  }
+
+  const last = result[result.length - 1];
+  if (last.x !== toPortPos.x || last.y !== toPortPos.y) {
+    result.push(toPortPos);
+  }
+  const prev = result[result.length - 2];
+  const endStub = buildStubPoint(toPortPos, toSide);
+  if (!isValidStub(toPortPos, prev, toSide)) {
+    if (prev && endStub.x !== prev.x && endStub.y !== prev.y) {
+      if (toSide === "left" || toSide === "right") {
+        result.splice(result.length - 1, 0, { x: endStub.x, y: prev.y });
+      } else {
+        result.splice(result.length - 1, 0, { x: prev.x, y: endStub.y });
+      }
+    }
+    result.splice(result.length - 1, 0, endStub);
+  }
+
+  return simplifyOrthogonalPath(dedupePoints(result));
+}
+
+function buildStubPoint(portPos, side) {
+  if (side === "left") return { x: portPos.x - GRID_SIZE, y: portPos.y };
+  if (side === "right") return { x: portPos.x + GRID_SIZE, y: portPos.y };
+  if (side === "top") return { x: portPos.x, y: portPos.y - GRID_SIZE };
+  return { x: portPos.x, y: portPos.y + GRID_SIZE };
+}
+
+function isValidStub(port, other, side) {
+  if (side === "left") return other.y === port.y && other.x <= port.x - GRID_SIZE;
+  if (side === "right") return other.y === port.y && other.x >= port.x + GRID_SIZE;
+  if (side === "top") return other.x === port.x && other.y <= port.y - GRID_SIZE;
+  return other.x === port.x && other.y >= port.y + GRID_SIZE;
+}
+
+function dedupePoints(points) {
+  if (!points || points.length === 0) return points;
+  const out = [];
+  points.forEach((pt) => {
+    const last = out[out.length - 1];
+    if (!last || last.x !== pt.x || last.y !== pt.y) {
+      out.push(pt);
+    }
+  });
+  return out;
+}
+
+function simplifyOrthogonalPath(points) {
+  if (!points || points.length < 3) return points;
+  let result = removeColinearPoints(dedupePoints(points));
+  let changed = true;
+  while (changed && result.length >= 4) {
+    changed = false;
+    for (let i = 0; i < result.length - 1; i += 1) {
+      const a = result[i];
+      const b = result[i + 1];
+      for (let j = 0; j < i - 1; j += 1) {
+        const c = result[j];
+        const d = result[j + 1];
+        const hit = orthogonalIntersection(a, b, c, d);
+        if (!hit) continue;
+        const head = result.slice(0, j + 1);
+        if (!samePoint(head[head.length - 1], hit)) {
+          head.push(hit);
+        }
+        let tail = result.slice(i + 1);
+        if (tail.length && samePoint(tail[0], head[head.length - 1])) {
+          tail = tail.slice(1);
+        }
+        result = removeColinearPoints(dedupePoints([...head, ...tail]));
+        changed = true;
+        break;
+      }
+      if (changed) break;
+    }
+  }
+  return result;
+}
+
+function orthogonalIntersection(a, b, c, d) {
+  const aH = a.y === b.y;
+  const bH = c.y === d.y;
+  if (aH === bH) return null;
+  const h = aH ? { a, b } : { a: c, b: d };
+  const v = aH ? { a: c, b: d } : { a, b };
+  const hx1 = Math.min(h.a.x, h.b.x);
+  const hx2 = Math.max(h.a.x, h.b.x);
+  const vy1 = Math.min(v.a.y, v.b.y);
+  const vy2 = Math.max(v.a.y, v.b.y);
+  const ix = v.a.x;
+  const iy = h.a.y;
+  if (ix > hx1 && ix < hx2 && iy > vy1 && iy < vy2) {
+    return { x: ix, y: iy };
+  }
+  return null;
+}
+
+function removeColinearPoints(points) {
+  if (!points || points.length < 3) return points;
+  const result = [points[0]];
+  for (let i = 1; i < points.length - 1; i += 1) {
+    const prev = result[result.length - 1];
+    const curr = points[i];
+    const next = points[i + 1];
+    if ((prev.x === curr.x && curr.x === next.x) || (prev.y === curr.y && curr.y === next.y)) {
+      continue;
+    }
+    result.push(curr);
+  }
+  result.push(points[points.length - 1]);
+  return result;
+}
+
+function samePoint(a, b) {
+  if (!a || !b) return false;
+  return a.x === b.x && a.y === b.y;
 }
 
 function pointsToPath(points) {

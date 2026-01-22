@@ -32,6 +32,18 @@ export const createSinkTemplates = (helpers) => {
         const plotHeight = block.height - 40;
         const plot = svgRect(10, 30, block.width - 20, plotHeight, "scope-plot");
         group.appendChild(plot);
+        const defs = createSvgElement("defs");
+        const clipId = `scope-clip-${block.id}`;
+        const clipRect = createSvgElement("rect", {
+          x: plot.getAttribute("x"),
+          y: plot.getAttribute("y"),
+          width: plot.getAttribute("width"),
+          height: plot.getAttribute("height"),
+        });
+        const clipPath = createSvgElement("clipPath", { id: clipId });
+        clipPath.appendChild(clipRect);
+        defs.appendChild(clipPath);
+        group.appendChild(defs);
         const axesGroup = createSvgElement("g", { class: "scope-axes" });
         const xAxis = createSvgElement("line", { class: "scope-axis" });
         const yAxis = createSvgElement("line", { class: "scope-axis" });
@@ -42,14 +54,17 @@ export const createSinkTemplates = (helpers) => {
         xTicks.forEach((tick) => axesGroup.appendChild(tick));
         yTicks.forEach((tick) => axesGroup.appendChild(tick));
         group.appendChild(axesGroup);
+        const pathsGroup = createSvgElement("g", { class: "scope-paths", "clip-path": `url(#${clipId})` });
+        group.appendChild(pathsGroup);
         const colors = ["scope-path-1", "scope-path-2", "scope-path-3"];
         block.scopePaths = colors.map((cls) => {
           const path = createSvgElement("path", { class: `scope-path ${cls}` });
-          group.appendChild(path);
+          pathsGroup.appendChild(path);
           return path;
         });
         block.scopePlot = plot;
         block.scopeAxes = { xAxis, yAxis, xTicks, yTicks };
+        block.scopeClipRect = clipRect;
       },
     },
     fileSink: {
