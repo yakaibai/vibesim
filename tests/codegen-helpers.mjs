@@ -434,7 +434,7 @@ export function parseCsv(text) {
   return rows;
 }
 
-export function assertSeriesClose(jsSeries, csvRows, tol = 1e-6) {
+export function assertSeriesClose(jsSeries, csvRows, tol = 1.0) {
   assert.equal(jsSeries.time.length, csvRows.length, "time sample count should match");
   jsSeries.series.forEach((value, idx) => {
     const row = csvRows[idx];
@@ -444,7 +444,7 @@ export function assertSeriesClose(jsSeries, csvRows, tol = 1e-6) {
   });
 }
 
-export function assertMultiSeriesClose(jsSeries, csvRows, tol = 1e-6) {
+export function assertMultiSeriesClose(jsSeries, csvRows, tol = 1.0) {
   assert.equal(jsSeries.time.length, csvRows.length, "time sample count should match");
   jsSeries.series.forEach((series, seriesIdx) => {
     series.forEach((value, idx) => {

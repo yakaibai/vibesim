@@ -62,22 +62,49 @@ export const continuousSimHandlers = {
   delay: {
     init: (ctx, block) => {
       const params = ctx.resolvedParams.get(block.id) || {};
-      const steps = Math.max(1, Math.round(Number(params.delay || 0) / ctx.dt));
+      const delaySamples = Math.max(0, Number(params.delay || 0) / ctx.dt);
+      const steps = Math.max(1, Math.ceil(delaySamples) + 1);
+      const len = Math.max(2, steps + 1);
       const state = getBlockState(ctx, block);
-      state.delayBuffer = Array(steps + 1).fill(0);
-      state.output = 0;
+      state.delayBuffer = Array(len).fill(0);
+      state.delayIndex = 0;
+      state.delaySamples = delaySamples;
     },
     output: (ctx, block) => {
       const state = getBlockState(ctx, block);
-      const out = state.delayBuffer?.[0] ?? 0;
+      const buf = state.delayBuffer;
+      const len = buf?.length || 0;
+      if (!buf || len < 2) {
+        ctx.outputs.set(block.id, 0);
+        return;
+      }
+      let delaySamples = Number(state.delaySamples || 0);
+      if (delaySamples < 0) delaySamples = 0;
+      let d0 = Math.floor(delaySamples);
+      let frac = delaySamples - d0;
+      if (d0 > len - 2) {
+        d0 = len - 2;
+        frac = 1.0;
+      }
+      const base = state.delayIndex || 0;
+      let i0 = base - d0;
+      let i1 = base - d0 - 1;
+      while (i0 < 0) i0 += len;
+      while (i1 < 0) i1 += len;
+      const s0 = buf[i0 % len] ?? 0;
+      const s1 = buf[i1 % len] ?? 0;
+      const out = s0 * (1 - frac) + s1 * frac;
       ctx.outputs.set(block.id, out);
     },
     update: (ctx, block) => {
       const state = getBlockState(ctx, block);
       if (!state.delayBuffer) return;
+      const len = state.delayBuffer.length || 0;
+      if (len < 1) return;
       const inputVal = getInputValue(ctx, block, 0, 0);
-      state.delayBuffer.shift();
-      state.delayBuffer.push(inputVal ?? 0);
+      const base = state.delayIndex || 0;
+      state.delayBuffer[base] = inputVal ?? 0;
+      state.delayIndex = (base + 1) % len;
     },
   },
   stateSpace: {

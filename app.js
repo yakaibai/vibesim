@@ -310,14 +310,22 @@ renderInspector = createInspector({
 
 const downloadFile = (name, content) => {
   const blob = new Blob([content], { type: "text/plain" });
+  if (window.navigator?.msSaveOrOpenBlob) {
+    window.navigator.msSaveOrOpenBlob(blob, name);
+    return;
+  }
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
   link.href = url;
   link.download = name;
+  link.style.display = "none";
   document.body.appendChild(link);
-  link.click();
-  link.remove();
-  URL.revokeObjectURL(url);
+  const clickLink = () => {
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  };
+  requestAnimationFrame(() => setTimeout(clickLink, 0));
 };
 
 let zoomScale = 1;
