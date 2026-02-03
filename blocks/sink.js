@@ -65,6 +65,19 @@ export const createSinkTemplates = (helpers) => {
         block.scopePlot = plot;
         block.scopeAxes = { xAxis, yAxis, xTicks, yTicks };
         block.scopeClipRect = clipRect;
+        const hintColors = ["#f6d63b", "#d35cff", "#35d1ff"];
+        const hintRadius = 3;
+        block.scopeInputHints = hintColors.map((color) => {
+          const hint = createSvgElement("circle", {
+            cx: 8,
+            cy: 40,
+            r: hintRadius,
+            fill: color,
+            class: "scope-input-hint",
+          });
+          group.appendChild(hint);
+          return hint;
+        });
       },
     },
     fileSink: {

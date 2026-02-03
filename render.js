@@ -1069,6 +1069,15 @@ export function createRenderer({ svg, blockLayer, wireLayer, overlayLayer, state
       port.wireY = port.y;
       updatePortElement(port);
     });
+    if (block.scopeInputHints && block.scopeInputHints.length) {
+      const hintX = 5;
+      inputPorts.forEach((port, index) => {
+        const hint = block.scopeInputHints[index];
+        if (!hint) return;
+        hint.setAttribute("cx", hintX);
+        hint.setAttribute("cy", port.y);
+      });
+    }
 
     updateBlockTransform(block);
     if (block.scopeData) renderScope(block);
