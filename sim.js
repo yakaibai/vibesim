@@ -49,7 +49,10 @@ export function simulate({ state, runtimeInput, statusEl }) {
   });
 
   const dt = Math.max(1e-6, Number(state.sampleTime ?? variables.dt ?? variables.sampleTime ?? 0.01) || 0.01);
-  const duration = Math.max(0.1, Number(runtimeInput.value) || 10);
+  const requestedDuration = Number(runtimeInput.value);
+  const baseDuration = Number.isFinite(requestedDuration) && requestedDuration >= 0 ? requestedDuration : 10;
+  const minDuration = dt * 10;
+  const duration = Math.max(baseDuration, minDuration);
   const samples = Math.floor(duration / dt);
   const time = [];
   const blockState = new Map();
@@ -130,6 +133,19 @@ export function drawScope(scopeBlock, time, series, connected) {
 
 export function renderScope(scopeBlock) {
   if (!scopeBlock.scopePaths || !scopeBlock.scopePlot || !scopeBlock.scopeData) return;
+  const formatTime = (t, t0, t1) => {
+    const range = Math.abs((t1 ?? 0) - (t0 ?? 0));
+    let scale = 1;
+    let unit = "s";
+    if (range < 1e-3) {
+      scale = 1e6;
+      unit = "µs";
+    } else if (range < 1) {
+      scale = 1e3;
+      unit = "ms";
+    }
+    return { value: t * scale, unit };
+  };
   const plot = scopeBlock.scopePlot;
   const plotX = Number(plot.getAttribute("x"));
   const plotY = Number(plot.getAttribute("y"));
@@ -287,6 +303,7 @@ export function renderScope(scopeBlock) {
   const tRange = t1 - t0;
   const t = tRange <= 0 ? Number(time[idx] ?? t0) : t0 + ratio * tRange;
   const x = plotX + ratio * plotW;
+  const timeLabel = formatTime(t, t0, t1);
 
   scopeBlock.scopeCursor?.remove();
   if (scopeBlock.scopeLabels) scopeBlock.scopeLabels.forEach((el) => el.remove());
@@ -313,7 +330,7 @@ export function renderScope(scopeBlock) {
     const label = createSvgElement(
       "text",
       { x: x + 6, y: y - 6, class: `scope-label scope-label-${seriesIdx + 1}` },
-      `t=${t.toFixed(2)} y${seriesIdx + 1}=${v.toFixed(2)}`
+      `t=${timeLabel.value.toFixed(2)} ${timeLabel.unit} y${seriesIdx + 1}=${v.toFixed(2)}`
     );
     scopeBlock.group.appendChild(dot);
     scopeBlock.group.appendChild(label);

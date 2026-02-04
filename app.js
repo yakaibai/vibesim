@@ -445,6 +445,7 @@ function serializeDiagram(state) {
     blocks,
     connections,
     variables: state.variablesText || "",
+    sampleTime: Number(state.sampleTime) || 0.01,
     runtime: Number(runtimeInput?.value) || 0,
   };
 }
@@ -457,6 +458,11 @@ function loadDiagram(data) {
   if (diagramNameInput) diagramNameInput.value = state.diagramName;
   if (runtimeInput && Number.isFinite(Number(data.runtime))) {
     runtimeInput.value = String(Number(data.runtime));
+  }
+  if (simDt && Number.isFinite(Number(data.sampleTime))) {
+    simDt.value = String(Number(data.sampleTime));
+    const value = Number(simDt.value);
+    state.sampleTime = Number.isFinite(value) && value > 0 ? value : 0.01;
   }
   state.variablesText = typeof data.variables === "string" ? data.variables : "";
   const variablesInput = document.getElementById("variablesInput");
