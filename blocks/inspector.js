@@ -165,6 +165,45 @@ export const createInspector = ({
           input.value = key === "width" ? block.width : block.height;
         });
       });
+    } else if (block.type === "xyScope") {
+      inspectorBody.innerHTML = `
+        <label class="param">x min
+          <input type="text" data-edit="xMin" value="${block.params.xMin ?? ""}">
+        </label>
+        <label class="param">x max
+          <input type="text" data-edit="xMax" value="${block.params.xMax ?? ""}">
+        </label>
+        <label class="param">y min
+          <input type="text" data-edit="yMin" value="${block.params.yMin ?? ""}">
+        </label>
+        <label class="param">y max
+          <input type="text" data-edit="yMax" value="${block.params.yMax ?? ""}">
+        </label>
+        <label class="param">Width
+          <input type="number" data-edit="width" value="${block.params.width ?? block.width}" min="160" step="10">
+        </label>
+        <label class="param">Height
+          <input type="number" data-edit="height" value="${block.params.height ?? block.height}" min="120" step="10">
+        </label>
+      `;
+      ["xMin", "xMax", "yMin", "yMax"].forEach((key) => {
+        const input = inspectorBody.querySelector(`input[data-edit='${key}']`);
+        if (!input) return;
+        input.addEventListener("input", () => {
+          block.params[key] = input.value;
+          renderScope(block);
+        });
+      });
+      ["width", "height"].forEach((key) => {
+        const input = inspectorBody.querySelector(`input[data-edit='${key}']`);
+        if (!input) return;
+        input.addEventListener("change", () => {
+          const widthValue = Number(inspectorBody.querySelector("[data-edit='width']")?.value);
+          const heightValue = Number(inspectorBody.querySelector("[data-edit='height']")?.value);
+          renderer.resizeBlock(block, widthValue, heightValue);
+          input.value = key === "width" ? block.width : block.height;
+        });
+      });
     } else if (block.type === "chirp") {
       inspectorBody.innerHTML = `
         <label class="param">Amplitude

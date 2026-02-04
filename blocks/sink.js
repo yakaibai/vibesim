@@ -3,6 +3,7 @@ export const sinkLibrary = {
   title: "Sink",
   blocks: [
     { type: "scope", label: "Scope" },
+    { type: "xyScope", label: "X-Y Scope" },
     { type: "fileSink", label: "Output File" },
     { type: "labelSink", label: "Label" },
   ],
@@ -72,6 +73,70 @@ export const createSinkTemplates = (helpers) => {
             cx: 8,
             cy: 40,
             r: hintRadius,
+            fill: color,
+            class: "scope-input-hint",
+          });
+          group.appendChild(hint);
+          return hint;
+        });
+      },
+    },
+    xyScope: {
+      width: 220,
+      height: 160,
+      inputs: [
+        { x: 0, y: 50, side: "left" },
+        { x: 0, y: 110, side: "left" },
+      ],
+      outputs: [],
+      defaultParams: { xMin: "", xMax: "", yMin: "", yMax: "", width: 220, height: 160 },
+      render: (block) => {
+        const group = block.group;
+        const body = svgRect(0, 0, block.width, block.height, "block-body");
+        group.appendChild(body);
+        const title = svgText(10, 20, "X-Y Scope");
+        group.appendChild(title);
+        block.bodyRect = body;
+        block.scopeTitle = title;
+        const plotHeight = block.height - 40;
+        const plot = svgRect(10, 30, block.width - 20, plotHeight, "scope-plot");
+        group.appendChild(plot);
+        const defs = createSvgElement("defs");
+        const clipId = `scope-clip-${block.id}`;
+        const clipRect = createSvgElement("rect", {
+          x: plot.getAttribute("x"),
+          y: plot.getAttribute("y"),
+          width: plot.getAttribute("width"),
+          height: plot.getAttribute("height"),
+        });
+        const clipPath = createSvgElement("clipPath", { id: clipId });
+        clipPath.appendChild(clipRect);
+        defs.appendChild(clipPath);
+        group.appendChild(defs);
+        const axesGroup = createSvgElement("g", { class: "scope-axes" });
+        const xAxis = createSvgElement("line", { class: "scope-axis" });
+        const yAxis = createSvgElement("line", { class: "scope-axis" });
+        axesGroup.appendChild(xAxis);
+        axesGroup.appendChild(yAxis);
+        const xTicks = Array.from({ length: 9 }, () => createSvgElement("line", { class: "scope-tick" }));
+        const yTicks = Array.from({ length: 9 }, () => createSvgElement("line", { class: "scope-tick" }));
+        xTicks.forEach((tick) => axesGroup.appendChild(tick));
+        yTicks.forEach((tick) => axesGroup.appendChild(tick));
+        group.appendChild(axesGroup);
+        const pathsGroup = createSvgElement("g", { class: "scope-paths", "clip-path": `url(#${clipId})` });
+        group.appendChild(pathsGroup);
+        const path = createSvgElement("path", { class: "scope-path scope-path-1" });
+        pathsGroup.appendChild(path);
+        block.scopePaths = [path];
+        block.scopePlot = plot;
+        block.scopeAxes = { xAxis, yAxis, xTicks, yTicks };
+        block.scopeClipRect = clipRect;
+        const hintColors = ["#f6d63b", "#d35cff"];
+        block.scopeInputHints = hintColors.map((color) => {
+          const hint = createSvgElement("circle", {
+            cx: 8,
+            cy: 40,
+            r: 3,
             fill: color,
             class: "scope-input-hint",
           });

@@ -679,7 +679,7 @@ export const generatePython = (diagram, { sampleTime = 0.01, includeMain = true 
       lines.push(`        state["dss_next_${bid}"] = t + ${ts}`);
       return;
     }
-    if (type === "scope" || type === "fileSink") {
+    if (type === "scope" || type === "fileSink" || type === "xyScope") {
       lines.push(`    out["${bid}"] = ${in0Expr}`);
       return;
     }

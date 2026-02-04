@@ -896,7 +896,7 @@ export function createRenderer({ svg, blockLayer, wireLayer, overlayLayer, state
     blockLayer.appendChild(group);
     state.blocks.set(id, block);
 
-    if (type === "scope") {
+    if (type === "scope" || type === "xyScope") {
       updateScopeLayout(block);
     }
 
@@ -1023,7 +1023,7 @@ export function createRenderer({ svg, blockLayer, wireLayer, overlayLayer, state
   }
 
   function updateScopeLayout(block) {
-    if (!block || block.type !== "scope") return;
+    if (!block || (block.type !== "scope" && block.type !== "xyScope")) return;
     const { width, height } = clampScopeSize(block.width, block.height);
     block.width = width;
     block.height = height;
@@ -2382,7 +2382,7 @@ export function createRenderer({ svg, blockLayer, wireLayer, overlayLayer, state
   }
 
   function resizeBlock(block, width, height) {
-    if (!block || block.type !== "scope") return;
+    if (!block || (block.type !== "scope" && block.type !== "xyScope")) return;
     block.width = width;
     block.height = height;
     updateScopeLayout(block);

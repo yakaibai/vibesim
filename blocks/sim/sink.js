@@ -17,6 +17,26 @@ export const sinkSimHandlers = {
       });
     },
   },
+  xyScope: {
+    init: (ctx, block) => {
+      const inputs = ctx.inputMap.get(block.id) || [];
+      const state = ctx.blockState.get(block.id) || {};
+      state.xySeries = { x: [], y: [] };
+      state.xyConnected = inputs.map((fromId) => Boolean(fromId));
+      ctx.blockState.set(block.id, state);
+    },
+    afterStep: (ctx, block) => {
+      const state = ctx.blockState.get(block.id);
+      if (!state?.xySeries) return;
+      const inputs = ctx.inputMap.get(block.id) || [];
+      const xId = inputs[0];
+      const yId = inputs[1];
+      const xVal = xId ? ctx.outputs.get(xId) : null;
+      const yVal = yId ? ctx.outputs.get(yId) : null;
+      state.xySeries.x.push(xVal ?? null);
+      state.xySeries.y.push(yVal ?? null);
+    },
+  },
   fileSink: {
     init: (ctx, block) => {
       const state = ctx.blockState.get(block.id) || {};

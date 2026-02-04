@@ -727,8 +727,8 @@ export const generateC = (diagram, { sampleTime = 0.01, includeMain = true } = {
       lines.push(`    s->dss_last_${bid} = ${C} * s->dss_x_${bid} + ${D} * ${in0Expr};`);
       lines.push(`    s->dss_next_${bid} = t + ${ts};`);
       lines.push("  }");
-    } else if (type === "scope" || type === "fileSink") {
-      lines.push(`  out_${bid} = ${in0};`);
+    } else if (type === "scope" || type === "fileSink" || type === "xyScope") {
+      lines.push(`  out_${bid} = ${in0Expr};`);
     } else {
       lines.push(`  out_${bid} = 0.0;`);
     }
