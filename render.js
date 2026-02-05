@@ -118,6 +118,7 @@ function renderTeXMath(group, tex, width, height) {
   group.appendChild(foreign);
 }
 
+
 function svgRect(x, y, w, h, cls) {
   return createSvgElement("rect", { x, y, width: w, height: h, class: cls });
 }
@@ -928,6 +929,10 @@ export function createRenderer({ svg, blockLayer, wireLayer, overlayLayer, state
 
     if (type === "scope" || type === "xyScope") {
       updateScopeLayout(block);
+    }
+
+    if (type === "constant" || type === "gain") {
+      updateBlockLabel(block);
     }
 
     updateBlockTransform(block);
@@ -2434,6 +2439,52 @@ export function createRenderer({ svg, blockLayer, wireLayer, overlayLayer, state
     return { x: scaleX || 1, y: scaleY || 1 };
   }
 
+  function scaleMathToFit(mathGroup, targetWidth, targetHeight, padding = 8) {
+    if (!mathGroup) return;
+    const span = mathGroup.querySelector("span");
+    const wrapper = mathGroup.querySelector(".math-foreign");
+    if (!span || !wrapper || span.classList.contains("katex-target")) return;
+    const rect = span.getBoundingClientRect();
+    if (!rect.width || !rect.height) return;
+    const scale = getSvgScale();
+    const measuredW = rect.width / scale.x;
+    const measuredH = rect.height / scale.y;
+    const availableW = Math.max(1, targetWidth - padding * 2);
+    const availableH = Math.max(1, targetHeight - padding * 2);
+    const factor = Math.min(1, availableW / measuredW, availableH / measuredH);
+    if (factor < 0.999) {
+      wrapper.style.transformOrigin = "center center";
+      wrapper.style.transform = `scale(${factor})`;
+    } else {
+      wrapper.style.transform = "";
+    }
+  }
+
+  function getMathSpanSize(mathGroup) {
+    const span = mathGroup?.querySelector?.("span");
+    if (!span || span.classList.contains("katex-target")) return null;
+    const rect = span.getBoundingClientRect();
+    if (!rect.width || !rect.height) return null;
+    const scale = getSvgScale();
+    return {
+      w: rect.width / scale.x,
+      h: rect.height / scale.y,
+    };
+  }
+
+  function positionGainMath(mathGroup, block, padding = 8) {
+    if (!mathGroup || !block) return;
+    const size = getMathSpanSize(mathGroup);
+    if (!size) return;
+    const desiredCenter = block.width * 0.34;
+    const half = size.w / 2;
+    const minCenter = padding + half;
+    const maxCenter = block.width - padding - half;
+    const clampedCenter = Math.min(maxCenter, Math.max(minCenter, desiredCenter));
+    const shiftX = clampedCenter - (block.width / 2);
+    mathGroup.setAttribute("transform", `translate(${shiftX}, 0)`);
+  }
+
   function resizeUserFuncFromLabel(block, { force = false } = {}) {
     if (!block || block.type !== "userFunc") return;
     const rawExpr = String(block.params?.expr || "u");
@@ -2976,7 +3027,10 @@ export function createRenderer({ svg, blockLayer, wireLayer, overlayLayer, state
     }
     if (block.type === "constant") {
       const mathGroup = block.group.querySelector(".constant-math");
-      if (mathGroup) renderTeXMath(mathGroup, `${block.params.value}`, block.width, block.height);
+      if (mathGroup) {
+        renderTeXMath(mathGroup, `${block.params.value}`, block.width, block.height);
+        scaleMathToFit(mathGroup, block.width, block.height);
+      }
     }
     if (block.type === "step") {
       const texts = block.group.querySelectorAll("text");
@@ -3045,7 +3099,11 @@ export function createRenderer({ svg, blockLayer, wireLayer, overlayLayer, state
     }
     if (block.type === "gain") {
       const mathGroup = block.group.querySelector(".gain-math");
-      if (mathGroup) renderTeXMath(mathGroup, `${block.params.gain}`, block.width, block.height);
+      if (mathGroup) {
+        renderTeXMath(mathGroup, `${block.params.gain}`, block.width, block.height);
+        scaleMathToFit(mathGroup, block.width * 0.6, block.height);
+        positionGainMath(mathGroup, block, 8);
+      }
     }
     if (block.type === "sum") {
       const signs = block.params.signs || [];
