@@ -910,7 +910,7 @@ export function createRenderer({ svg, blockLayer, wireLayer, overlayLayer, state
       });
     });
 
-    if (type === "scope") {
+    if (type === "scope" || type === "xyScope") {
       const resizeHandle = createSvgElement("rect", {
         class: "resize-handle",
         x: block.width - 16,
@@ -1099,7 +1099,7 @@ export function createRenderer({ svg, blockLayer, wireLayer, overlayLayer, state
       port.wireY = port.y;
       updatePortElement(port);
     });
-    if (block.scopeInputHints && block.scopeInputHints.length) {
+    if (block.type !== "xyScope" && block.scopeInputHints && block.scopeInputHints.length) {
       const hintX = 5;
       inputPorts.forEach((port, index) => {
         const hint = block.scopeInputHints[index];
@@ -1110,7 +1110,7 @@ export function createRenderer({ svg, blockLayer, wireLayer, overlayLayer, state
     }
 
     updateBlockTransform(block);
-    if (block.scopeData) renderScope(block);
+    if (block.scopeData || block.type === "xyScope") renderScope(block);
     updateSelectionBox();
   }
 
