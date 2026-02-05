@@ -2,13 +2,14 @@ import { simHandlers, resolveLabelSourcesOnce } from "./blocks/sim/index.js";
 import { buildTfModel, outputFromState, integrateTfRK4 } from "./blocks/sim/helpers.js";
 import { evalExpression } from "./utils/expr.js";
 
-export function simulate({ state, runtimeInput, statusEl }) {
+export function simulate({ state, runtimeInput, statusEl, downloadFile }) {
   statusEl.textContent = "Running...";
   const blocks = Array.from(state.blocks.values());
   const scopes = blocks.filter((b) => b.type === "scope");
   const xyScopes = blocks.filter((b) => b.type === "xyScope");
+  const fileSinks = blocks.filter((b) => b.type === "fileSink");
 
-  if (scopes.length === 0 && xyScopes.length === 0) {
+  if (scopes.length === 0 && xyScopes.length === 0 && fileSinks.length === 0) {
     statusEl.textContent = "Add a Scope block";
     return;
   }
@@ -118,6 +119,14 @@ export function simulate({ state, runtimeInput, statusEl }) {
   blocks.forEach((block) => {
     const handler = simHandlers[block.type];
     if (handler?.finalize) handler.finalize(ctx, block);
+  });
+
+  blocks.forEach((block) => {
+    if (block.type !== "fileSink") return;
+    const csv = block.params?.lastCsv;
+    if (!csv || typeof downloadFile !== "function") return;
+    const name = String(block.params?.path || "output.csv");
+    downloadFile(name, csv, { immediate: true });
   });
 
   scopes.forEach((scope) => {

@@ -333,7 +333,7 @@ if (inspectorBody) {
   });
 }
 
-const downloadFile = (name, content) => {
+const downloadFile = (name, content, { immediate = false } = {}) => {
   const blob = new Blob([content], { type: "text/plain" });
   if (window.navigator?.msSaveOrOpenBlob) {
     window.navigator.msSaveOrOpenBlob(blob, name);
@@ -350,7 +350,11 @@ const downloadFile = (name, content) => {
     link.remove();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   };
-  requestAnimationFrame(() => setTimeout(clickLink, 0));
+  if (immediate) {
+    clickLink();
+  } else {
+    requestAnimationFrame(() => setTimeout(clickLink, 0));
+  }
 };
 
 let zoomScale = 1;
@@ -1131,7 +1135,7 @@ function init() {
     });
   });
 
-  const handleRun = () => simulate({ state, runtimeInput, statusEl });
+  const handleRun = () => simulate({ state, runtimeInput, statusEl, downloadFile });
   if (simDt) {
     const updateSimDt = () => {
       const value = Number(simDt.value);
