@@ -32,7 +32,9 @@ const mathAliases = {
   tan: Math.tan,
   tanh: Math.tanh,
   pi: Math.PI,
-  e: Math.E
+  e: Math.E,
+  inf: Infinity,
+  infinity: Infinity
 };
 
 const tokenize = (expr) => {
@@ -274,7 +276,7 @@ const evalRpn = (rpn, scope) => {
   }
   if (stack.length !== 1) return NaN;
   const result = stack[0];
-  return Number.isFinite(result) ? result : NaN;
+  return Number.isNaN(result) ? NaN : result;
 };
 
 export const evalExpression = (expr, variables) => {
@@ -283,7 +285,7 @@ export const evalExpression = (expr, variables) => {
   const trimmed = replaceLatexVars(expr).trim();
   if (!trimmed) return NaN;
   const direct = Number(trimmed);
-  if (Number.isFinite(direct)) return direct;
+  if (!Number.isNaN(direct)) return direct;
   const scope = { ...mathAliases, ...(variables || {}) };
   const tokens = tokenize(trimmed);
   if (!tokens.length) return NaN;

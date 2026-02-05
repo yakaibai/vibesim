@@ -1147,6 +1147,7 @@ body[data-theme="noir-cyan"] {
   flex-direction: column;
   gap: 8px;
   min-height: 0;
+  overflow: auto;
 }
 
 .inspector .button-row {

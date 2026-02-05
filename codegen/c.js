@@ -18,7 +18,7 @@ const evalExpression = (expr, variables) => {
     const values = Object.values(variables || {});
     const fn = Function(...names, "Math", `"use strict"; return (${trimmed});`);
     const result = fn(...values, Math);
-    return Number.isFinite(result) ? result : NaN;
+    return Number.isNaN(result) ? NaN : result;
   } catch {
     return NaN;
   }
@@ -45,17 +45,26 @@ const resolveNumeric = (value, variables) => {
   const text = String(value).trim();
   if (!text) return 0;
   const direct = Number(text);
-  if (Number.isFinite(direct)) return direct;
-  const merged = { pi: Math.PI, e: Math.E, ...(variables || {}) };
+  if (!Number.isNaN(direct)) return direct;
+  const merged = { pi: Math.PI, e: Math.E, inf: Infinity, infinity: Infinity, ...(variables || {}) };
   if (Object.prototype.hasOwnProperty.call(merged, text)) {
-    return Number(merged[text]) || 0;
+    const value = Number(merged[text]);
+    return Number.isNaN(value) ? 0 : value;
   }
   const stripped = text.startsWith("\\") ? text.slice(1) : text;
   if (Object.prototype.hasOwnProperty.call(merged, stripped)) {
-    return Number(merged[stripped]) || 0;
+    const value = Number(merged[stripped]);
+    return Number.isNaN(value) ? 0 : value;
   }
   const evaluated = evalExpression(text, merged);
-  return Number.isFinite(evaluated) ? evaluated : 0;
+  return Number.isNaN(evaluated) ? 0 : evaluated;
+};
+
+const formatNumber = (value) => {
+  if (value === Infinity) return "INFINITY";
+  if (value === -Infinity) return "-INFINITY";
+  if (Number.isNaN(value)) return "0.0";
+  return String(value);
 };
 
 const parseList = (value, variables) => {
@@ -284,7 +293,12 @@ export const generateC = (diagram, { sampleTime = 0.01, includeMain = true } = {
     const params = block.params || {};
     if (block.type === "integrator") {
       const initVal = resolveNumeric(params.initial, variables);
-      addState(`int_${id}`, `${initVal}`);
+      const minVal = resolveNumeric(params.min, variables);
+      const maxVal = resolveNumeric(params.max, variables);
+      addState(
+        `int_${id}`,
+        `fmin(fmax(${formatNumber(initVal)}, ${formatNumber(minVal)}), ${formatNumber(maxVal)})`
+      );
     }
     if (block.type === "derivative") addState(`der_prev_${id}`);
     if (block.type === "rate") addState(`rate_${id}`);
@@ -431,10 +445,12 @@ export const generateC = (diagram, { sampleTime = 0.01, includeMain = true } = {
   }
 
   if (pidBlocks.length) {
-    constLines.push("typedef struct { double kp; double ki; double kd; } PidParams;");
+    constLines.push("typedef struct { double kp; double ki; double kd; double min; double max; } PidParams;");
     constLines.push("typedef struct { double integ; double prev; } PidState;");
     helperLines.push("static double pid_step(const PidParams* p, PidState* s, double u, double dt) {");
     helperLines.push("  s->integ += u * dt;");
+    helperLines.push("  if (s->integ < p->min) s->integ = p->min;");
+    helperLines.push("  if (s->integ > p->max) s->integ = p->max;");
     helperLines.push("  double deriv = (u - s->prev) / fmax(dt, 1e-6);");
     helperLines.push("  s->prev = u;");
     helperLines.push("  return p->kp * u + p->ki * s->integ + p->kd * deriv;");
@@ -445,7 +461,9 @@ export const generateC = (diagram, { sampleTime = 0.01, includeMain = true } = {
       const kp = resolveNumeric(params.kp, variables);
       const ki = resolveNumeric(params.ki, variables);
       const kd = resolveNumeric(params.kd, variables);
-      constLines.push(`static const PidParams pid_params_${id} = { ${kp}, ${ki}, ${kd} };`);
+      const minVal = resolveNumeric(params.min, variables);
+      const maxVal = resolveNumeric(params.max, variables);
+      constLines.push(`static const PidParams pid_params_${id} = { ${kp}, ${ki}, ${kd}, ${formatNumber(minVal)}, ${formatNumber(maxVal)} };`);
     });
   }
 
@@ -634,7 +652,10 @@ export const generateC = (diagram, { sampleTime = 0.01, includeMain = true } = {
       const minVal = resolveNumeric(params.min, variables);
       lines.push(`  out_${bid} = fmin(fmax(${in0Expr}, ${minVal}), ${maxVal});`);
     } else if (type === "integrator") {
+      const minVal = formatNumber(resolveNumeric(params.min, variables));
+      const maxVal = formatNumber(resolveNumeric(params.max, variables));
       lines.push(`  s->int_${bid} += ${in0Expr} * dt;`);
+      lines.push(`  s->int_${bid} = fmin(fmax(s->int_${bid}, ${minVal}), ${maxVal});`);
       lines.push(`  out_${bid} = s->int_${bid};`);
     } else if (type === "derivative") {
       lines.push(`  out_${bid} = (${in0Expr} - s->der_prev_${bid}) / fmax(dt, 1e-6);`);

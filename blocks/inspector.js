@@ -255,10 +255,24 @@ export const createInspector = ({
         <label class="param">Initial state
           <input type="text" data-edit="initial" value="${block.params.initial ?? 0}" step="0.1">
         </label>
+        <label class="param">Integrator min
+          <input type="text" data-edit="min" value="${block.params.min ?? "-inf"}">
+        </label>
+        <label class="param">Integrator max
+          <input type="text" data-edit="max" value="${block.params.max ?? "inf"}">
+        </label>
       `;
       const initialInput = inspectorBody.querySelector("input[data-edit='initial']");
+      const minInput = inspectorBody.querySelector("input[data-edit='min']");
+      const maxInput = inspectorBody.querySelector("input[data-edit='max']");
       initialInput.addEventListener("input", () => {
         block.params.initial = initialInput.value;
+      });
+      minInput.addEventListener("input", () => {
+        block.params.min = minInput.value;
+      });
+      maxInput.addEventListener("input", () => {
+        block.params.max = maxInput.value;
       });
     } else if (block.type === "userFunc") {
       inspectorBody.innerHTML = `
@@ -613,19 +627,31 @@ export const createInspector = ({
         <label class="param">Kd
           <input type="text" data-edit="kd" value="${block.params.kd}" step="0.1">
         </label>
+        <label class="param">Integrator min
+          <input type="text" data-edit="min" value="${block.params.min ?? "-inf"}">
+        </label>
+        <label class="param">Integrator max
+          <input type="text" data-edit="max" value="${block.params.max ?? "inf"}">
+        </label>
       `;
       const kpInput = inspectorBody.querySelector("input[data-edit='kp']");
       const kiInput = inspectorBody.querySelector("input[data-edit='ki']");
       const kdInput = inspectorBody.querySelector("input[data-edit='kd']");
+      const minInput = inspectorBody.querySelector("input[data-edit='min']");
+      const maxInput = inspectorBody.querySelector("input[data-edit='max']");
       const update = () => {
         block.params.kp = kpInput.value;
         block.params.ki = kiInput.value;
         block.params.kd = kdInput.value;
+        block.params.min = minInput.value;
+        block.params.max = maxInput.value;
         renderer.updateBlockLabel(block);
       };
       kpInput.addEventListener("input", update);
       kiInput.addEventListener("input", update);
       kdInput.addEventListener("input", update);
+      minInput.addEventListener("input", update);
+      maxInput.addEventListener("input", update);
     } else if (block.type === "fileSink") {
       inspectorBody.innerHTML = `
         <label class="param">File path

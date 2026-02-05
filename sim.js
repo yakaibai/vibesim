@@ -27,10 +27,10 @@ export function simulate({ state, runtimeInput, statusEl, downloadFile }) {
     if (key === "signs") return value;
     if (Array.isArray(value)) return value.map((v) => {
       const out = evalExpression(v, variables);
-      return Number.isFinite(out) ? out : 0;
+      return Number.isNaN(out) ? 0 : out;
     });
     const out = evalExpression(value, variables);
-    return Number.isFinite(out) ? out : 0;
+    return Number.isNaN(out) ? 0 : out;
   };
   const resolvedParams = new Map();
   blocks.forEach((block) => {

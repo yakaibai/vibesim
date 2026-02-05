@@ -7,12 +7,23 @@ import {
   getBlockState,
 } from "./helpers.js";
 
+const resolveLimit = (value, fallback) => {
+  if (value === Infinity || value === -Infinity) return value;
+  const num = Number(value);
+  return Number.isFinite(num) ? num : fallback;
+};
+
+const clampValue = (value, min, max) => Math.min(Math.max(value, min), max);
+
 export const continuousSimHandlers = {
   integrator: {
     init: (ctx, block) => {
       const params = ctx.resolvedParams.get(block.id) || {};
       const state = getBlockState(ctx, block);
-      state.integrator = Number(params.initial) || 0;
+      const min = resolveLimit(params.min, -Infinity);
+      const max = resolveLimit(params.max, Infinity);
+      const initial = Number(params.initial) || 0;
+      state.integrator = clampValue(initial, min, max);
     },
     output: (ctx, block) => {
       const state = getBlockState(ctx, block);
@@ -20,10 +31,14 @@ export const continuousSimHandlers = {
       ctx.outputs.set(block.id, prev);
     },
     update: (ctx, block) => {
+      const params = ctx.resolvedParams.get(block.id) || {};
+      const min = resolveLimit(params.min, -Infinity);
+      const max = resolveLimit(params.max, Infinity);
       const inputVal = getInputValue(ctx, block, 0, 0);
       const state = getBlockState(ctx, block);
       const prev = state.integrator ?? 0;
-      state.integrator = integrateRK4(prev, inputVal ?? 0, ctx.dt);
+      const next = integrateRK4(prev, inputVal ?? 0, ctx.dt);
+      state.integrator = clampValue(next, min, max);
     },
   },
   tf: {
@@ -214,10 +229,13 @@ export const continuousSimHandlers = {
       const kp = Number(params.kp) || 0;
       const ki = Number(params.ki) || 0;
       const kd = Number(params.kd) || 0;
+      const min = resolveLimit(params.min, -Infinity);
+      const max = resolveLimit(params.max, Infinity);
       const nextIntegral = pid.integral + (inputVal ?? 0) * ctx.dt;
+      const clampedIntegral = clampValue(nextIntegral, min, max);
       const derivative = ((inputVal ?? 0) - pid.prev) / Math.max(ctx.dt, 1e-6);
-      const out = kp * (inputVal ?? 0) + ki * nextIntegral + kd * derivative;
-      state.pid = { integral: nextIntegral, prev: inputVal ?? 0 };
+      const out = kp * (inputVal ?? 0) + ki * clampedIntegral + kd * derivative;
+      state.pid = { integral: clampedIntegral, prev: inputVal ?? 0 };
       state.output = out;
     },
   },

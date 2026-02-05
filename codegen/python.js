@@ -9,13 +9,13 @@ const evalExpression = (expr, variables) => {
   const trimmed = replaceLatexVars(expr).trim();
   if (!trimmed) return NaN;
   const direct = Number(trimmed);
-  if (Number.isFinite(direct)) return direct;
+  if (!Number.isNaN(direct)) return direct;
   try {
     const names = Object.keys(variables || {});
     const values = Object.values(variables || {});
     const fn = Function(...names, "Math", `"use strict"; return (${trimmed});`);
     const result = fn(...values, Math);
-    return Number.isFinite(result) ? result : NaN;
+    return Number.isNaN(result) ? NaN : result;
   } catch {
     return NaN;
   }
@@ -42,17 +42,26 @@ const resolveNumeric = (value, variables) => {
   const text = String(value).trim();
   if (!text) return 0;
   const direct = Number(text);
-  if (Number.isFinite(direct)) return direct;
-  const merged = { pi: Math.PI, e: Math.E, ...(variables || {}) };
+  if (!Number.isNaN(direct)) return direct;
+  const merged = { pi: Math.PI, e: Math.E, inf: Infinity, infinity: Infinity, ...(variables || {}) };
   if (Object.prototype.hasOwnProperty.call(merged, text)) {
-    return Number(merged[text]) || 0;
+    const valueNum = Number(merged[text]);
+    return Number.isNaN(valueNum) ? 0 : valueNum;
   }
   const stripped = text.startsWith("\\") ? text.slice(1) : text;
   if (Object.prototype.hasOwnProperty.call(merged, stripped)) {
-    return Number(merged[stripped]) || 0;
+    const valueNum = Number(merged[stripped]);
+    return Number.isNaN(valueNum) ? 0 : valueNum;
   }
   const evaluated = evalExpression(text, merged);
-  return Number.isFinite(evaluated) ? evaluated : 0;
+  return Number.isNaN(evaluated) ? 0 : evaluated;
+};
+
+const formatNumber = (value) => {
+  if (value === Infinity) return "math.inf";
+  if (value === -Infinity) return "-math.inf";
+  if (Number.isNaN(value)) return "0.0";
+  return String(value);
 };
 
 const normalizePoly = (values) => {
@@ -227,7 +236,10 @@ export const generatePython = (diagram, { sampleTime = 0.01, includeMain = true 
     const id = sanitizeId(block.id);
     const params = block.params || {};
     if (block.type === "integrator") {
-      stateInit.push(`state["int_${id}"] = ${resolveNumeric(params.initial, variables)}`);
+      const initVal = resolveNumeric(params.initial, variables);
+      const minVal = resolveNumeric(params.min, variables);
+      const maxVal = resolveNumeric(params.max, variables);
+      stateInit.push(`state["int_${id}"] = min(max(${formatNumber(initVal)}, ${formatNumber(minVal)}), ${formatNumber(maxVal)})`);
     }
     if (block.type === "derivative") {
       stateInit.push(`state["der_prev_${id}"] = 0.0`);
@@ -354,6 +366,8 @@ export const generatePython = (diagram, { sampleTime = 0.01, includeMain = true 
   if (pidBlocks.length) {
     lines.push("def pid_step(params, state, u, dt):");
     lines.push("    state['integ'] += u * dt");
+    lines.push("    if state['integ'] < params['min']: state['integ'] = params['min']");
+    lines.push("    if state['integ'] > params['max']: state['integ'] = params['max']");
     lines.push("    deriv = (u - state['prev']) / max(dt, 1e-6)");
     lines.push("    state['prev'] = u");
     lines.push("    return params['kp'] * u + params['ki'] * state['integ'] + params['kd'] * deriv");
@@ -363,7 +377,9 @@ export const generatePython = (diagram, { sampleTime = 0.01, includeMain = true 
       const kp = resolveNumeric(params.kp, variables);
       const ki = resolveNumeric(params.ki, variables);
       const kd = resolveNumeric(params.kd, variables);
-      lines.push(`PID_PARAMS_${id} = {"kp": ${kp}, "ki": ${ki}, "kd": ${kd}}`);
+      const minVal = resolveNumeric(params.min, variables);
+      const maxVal = resolveNumeric(params.max, variables);
+      lines.push(`PID_PARAMS_${id} = {"kp": ${kp}, "ki": ${ki}, "kd": ${kd}, "min": ${formatNumber(minVal)}, "max": ${formatNumber(maxVal)}}`);
     });
     lines.push("");
   }
@@ -565,7 +581,10 @@ export const generatePython = (diagram, { sampleTime = 0.01, includeMain = true 
       return;
     }
     if (type === "integrator") {
+      const minVal = formatNumber(resolveNumeric(params.min, variables));
+      const maxVal = formatNumber(resolveNumeric(params.max, variables));
       lines.push(`    state["int_${bid}"] += ${in0Expr} * dt`);
+      lines.push(`    state["int_${bid}"] = min(max(state["int_${bid}"], ${minVal}), ${maxVal})`);
       lines.push(`    out["${bid}"] = state["int_${bid}"]`);
       return;
     }

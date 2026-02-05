@@ -27,7 +27,7 @@ export const createContinuousTemplates = (helpers) => {
       height: 80,
       inputs: [{ x: 0, y: 40, side: "left" }],
       outputs: [{ x: 80, y: 40, side: "right" }],
-      defaultParams: { initial: 0 },
+      defaultParams: { initial: 0, min: "-inf", max: "inf" },
       render: (block) => {
         const group = block.group;
         group.appendChild(
@@ -168,7 +168,7 @@ export const createContinuousTemplates = (helpers) => {
       height: 80,
       inputs: [{ x: 0, y: 40, side: "left" }],
       outputs: [{ x: 80, y: 40, side: "right" }],
-      defaultParams: { kp: 1, ki: 0, kd: 0 },
+      defaultParams: { kp: 1, ki: 0, kd: 0, min: "-inf", max: "inf" },
       render: (block) => {
         const group = block.group;
         group.appendChild(svgRect(0, 0, block.width, block.height, "block-body"));
