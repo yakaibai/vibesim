@@ -6,6 +6,7 @@ import { stabilityMargins } from "./control/margins.js";
 import { diagramToFRD } from "./control/diagram.js";
 import { blockLibrary } from "./blocks/index.js";
 import { createInspector } from "./blocks/inspector.js";
+import { evalExpression, exprToLatex } from "./utils/expr.js";
 
 const svg = document.getElementById("svgCanvas");
 const blockLayer = document.getElementById("blockLayer");
@@ -35,9 +36,22 @@ const debugPanel = document.getElementById("debugPanel");
 const debugLog = document.getElementById("debugLog");
 const blockLibraryGroups = document.getElementById("blockLibraryGroups");
 
-const DEBUG_UI = false;
+const DEBUG_UI = true;
 
 if (debugPanel) debugPanel.hidden = !DEBUG_UI;
+
+const updateUserFuncDebug = () => {
+  const selected = state.selectedId ? state.blocks.get(state.selectedId) : null;
+  if (selected?.type === "userFunc") {
+    const expr = String(selected.params?.expr || "u");
+    const latex = exprToLatex(expr);
+    const text = `[userFunc]\nexpr=${expr}\nlatex=${latex}`;
+    window.vibesimDebugExtra = text;
+    if (debugLog) debugLog.textContent = text;
+    return;
+  }
+  window.vibesimDebugExtra = "";
+};
 
 if (rotateSelectionBtn) rotateSelectionBtn.disabled = true;
 
@@ -293,6 +307,7 @@ const renderer = createRenderer({
     renderInspector(blockId);
     focusPropertiesPanel();
     updateStabilityPanel();
+    updateUserFuncDebug();
   },
   onSelectConnection: (connectionId) => {
     renderInspector(connectionId);
@@ -308,6 +323,15 @@ renderInspector = createInspector({
   renderScope,
   signalDiagramChanged,
 }).renderInspector;
+
+if (inspectorBody) {
+  inspectorBody.addEventListener("input", (event) => {
+    const target = event.target;
+    if (!(target instanceof HTMLElement)) return;
+    if (target.dataset.edit !== "expr") return;
+    updateUserFuncDebug();
+  });
+}
 
 const downloadFile = (name, content) => {
   const blob = new Blob([content], { type: "text/plain" });
@@ -365,27 +389,6 @@ const normalizeVarName = (name) => {
   const trimmed = String(name).trim();
   if (trimmed.startsWith("\\")) return trimmed.slice(1);
   return trimmed;
-};
-
-const replaceLatexVars = (expr) =>
-  String(expr || "").replace(/\\[A-Za-z]+/g, (match) => match.slice(1));
-
-const evalExpression = (expr, vars) => {
-  if (typeof expr === "number") return expr;
-  if (expr == null) return NaN;
-  const trimmed = replaceLatexVars(expr).trim();
-  if (!trimmed) return NaN;
-  const num = Number(trimmed);
-  if (Number.isFinite(num)) return num;
-  try {
-    const names = Object.keys(vars);
-    const values = Object.values(vars);
-    const fn = Function(...names, "Math", `"use strict"; return (${trimmed});`);
-    const result = fn(...values, Math);
-    return Number.isFinite(result) ? result : NaN;
-  } catch {
-    return NaN;
-  }
 };
 
 const parseVariables = (text) => {
@@ -1433,9 +1436,10 @@ function init() {
       const docH = document.documentElement?.clientHeight || 0;
       return Math.max(visualH, innerH, docH);
     };
-    const getCarouselPanels = () => Array.from(
-      carousel.querySelectorAll(":scope > .toolbox, :scope > .panel-card, :scope > .right-column > .panel-card")
-    );
+    const getCarouselPanels = () =>
+      Array.from(
+        carousel.querySelectorAll(":scope > .toolbox, :scope > .panel-card, :scope > .right-column > .panel-card")
+      ).filter((panel) => panel.offsetParent !== null && panel.clientWidth > 0);
 
     const setCollapsed = (next) => {
       collapsed = next;
@@ -1553,14 +1557,7 @@ function init() {
     window.addEventListener("resize", syncCarouselHeight);
     window.addEventListener("orientationchange", () => syncCarouselHeight());
 
-    if (window.matchMedia("(max-width: 900px)").matches) {
-      document.addEventListener("touchmove", (event) => {
-        if (event.target.closest(".panel-carousel")) {
-          return;
-        }
-        event.preventDefault();
-      }, { passive: false });
-    }
+    // Allow native touch scrolling; avoid global touchmove suppression.
 
   };
   initMobileCarousel();

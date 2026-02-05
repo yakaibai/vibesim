@@ -67,6 +67,20 @@ const normalizePoly = (values) => {
   return { trimmed: allZero ? [0] : trimmed, allZero };
 };
 
+const sanitizeExpression = (expr) =>
+  String(expr || "").replace(/\\[A-Za-z]+/g, (match) => match.slice(1));
+
+const pythonMathExpr = (expr) => {
+  let out = sanitizeExpression(expr);
+  const funcs = ["sin", "cos", "tan", "asin", "acos", "atan", "sqrt", "exp", "log", "log10"];
+  funcs.forEach((fn) => {
+    const re = new RegExp(`\\b${fn}\\b`, "g");
+    out = out.replace(re, `math.${fn}`);
+  });
+  out = out.replace(/\babs\b/g, "abs");
+  return out;
+};
+
 const polyAdd = (a, b) => {
   const out = Array(Math.max(a.length, b.length)).fill(0);
   for (let i = 0; i < out.length; i += 1) {
@@ -492,6 +506,12 @@ export const generatePython = (diagram, { sampleTime = 0.01, includeMain = true 
     }
     if (type === "max") {
       lines.push(`    out["${bid}"] = max(${in0Expr}, ${in1Expr})`);
+      return;
+    }
+    if (type === "userFunc") {
+      const raw = String(params.expr ?? "u");
+      const expr = pythonMathExpr(raw).replace(/\bu\b/g, `(${in0Expr})`);
+      lines.push(`    out["${bid}"] = ${expr}`);
       return;
     }
 

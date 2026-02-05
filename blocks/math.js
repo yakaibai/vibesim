@@ -1,3 +1,5 @@
+import { exprToLatex } from "../utils/expr.js";
+
 export const mathLibrary = {
   id: "math",
   title: "Math",
@@ -8,6 +10,7 @@ export const mathLibrary = {
     { type: "abs", label: "Absolute value" },
     { type: "min", label: "Min" },
     { type: "max", label: "Max" },
+    { type: "userFunc", label: "User defined function" },
   ],
 };
 
@@ -150,6 +153,31 @@ export const createMathTemplates = (helpers) => {
         const mathGroup = createSvgElement("g", { class: "math-block" });
         group.appendChild(mathGroup);
         renderTeXMath(mathGroup, "\\scriptsize\\max", block.width, block.height);
+      },
+    },
+    userFunc: {
+      width: 120,
+      height: 80,
+      inputs: [{ x: 0, y: 40, side: "left" }],
+      outputs: [{ x: 120, y: 40, side: "right" }],
+      defaultParams: { expr: "u" },
+      resize: (block) => {
+        const expr = String(block.params?.expr ?? "u");
+        const length = Math.max(expr.length, 1);
+        const width = Math.max(120, 40 + length * 8);
+        const height = 80;
+        block.width = width;
+        block.height = height;
+        block.dynamicInputs = [{ x: 0, y: height / 2, side: "left" }];
+        block.dynamicOutputs = [{ x: width, y: height / 2, side: "right" }];
+      },
+      render: (block) => {
+        const group = block.group;
+        group.appendChild(createSvgElement("rect", { x: 0, y: 0, width: block.width, height: block.height, class: "block-body" }));
+        const mathGroup = createSvgElement("g", { class: "userfunc-math minmax-math" });
+        group.appendChild(mathGroup);
+        const latex = exprToLatex(block.params.expr || "u");
+        renderTeXMath(mathGroup, `\\scriptsize{${latex}}`, block.width, block.height);
       },
     },
   };

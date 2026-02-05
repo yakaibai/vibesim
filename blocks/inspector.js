@@ -260,6 +260,17 @@ export const createInspector = ({
       initialInput.addEventListener("input", () => {
         block.params.initial = initialInput.value;
       });
+    } else if (block.type === "userFunc") {
+      inspectorBody.innerHTML = `
+        <label class="param">Function
+          <input type="text" data-edit="expr" value="${block.params.expr ?? "u"}">
+        </label>
+      `;
+      const exprInput = inspectorBody.querySelector("input[data-edit='expr']");
+      exprInput.addEventListener("input", () => {
+        block.params.expr = exprInput.value;
+        renderer.updateBlockLabel(block);
+      });
     } else if (block.type === "labelSource" || block.type === "labelSink") {
       inspectorBody.innerHTML = `
         <label class="param">Label name

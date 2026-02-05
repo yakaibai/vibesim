@@ -19,6 +19,7 @@ export function simulate({ state, runtimeInput, statusEl }) {
     if (block.type === "labelSource" || block.type === "labelSink") {
       if (key === "name") return value;
     }
+    if (block.type === "userFunc" && key === "expr") return value;
     if (block.type === "fileSource" || block.type === "fileSink") {
       if (key === "path" || key === "times" || key === "values" || key === "lastCsv") return value;
     }
@@ -64,6 +65,7 @@ export function simulate({ state, runtimeInput, statusEl }) {
     labelSinks,
     blockState,
     dt,
+    variables,
   };
 
   blocks.forEach((block) => {

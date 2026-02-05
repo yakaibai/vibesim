@@ -3,6 +3,9 @@ const sanitizeId = (id) => String(id).replace(/[^a-zA-Z0-9_]/g, "_");
 const replaceLatexVars = (expr) =>
   String(expr || "").replace(/\\[A-Za-z]+/g, (match) => match.slice(1));
 
+const sanitizeExpression = (expr) => replaceLatexVars(expr)
+  .replace(/\babs\b/g, "fabs");
+
 const evalExpression = (expr, variables) => {
   if (typeof expr === "number") return expr;
   if (expr == null) return NaN;
@@ -622,6 +625,10 @@ export const generateC = (diagram, { sampleTime = 0.01, includeMain = true } = {
       lines.push(`  out_${bid} = fmin(${in0Expr}, ${in1Expr});`);
     } else if (type === "max") {
       lines.push(`  out_${bid} = fmax(${in0Expr}, ${in1Expr});`);
+    } else if (type === "userFunc") {
+      const raw = String(params.expr ?? "u");
+      const expr = sanitizeExpression(raw).replace(/\bu\b/g, `(${in0Expr})`);
+      lines.push(`  out_${bid} = ${expr};`);
     } else if (type === "saturation") {
       const maxVal = resolveNumeric(params.max, variables);
       const minVal = resolveNumeric(params.min, variables);

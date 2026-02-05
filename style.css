@@ -787,6 +787,7 @@ body[data-theme="noir-cyan"] {
   justify-content: center;
   font-size: 40px;
   color: #1b1a17;
+  overflow: visible;
 }
 
 .math-foreign mjx-container {
@@ -799,6 +800,7 @@ body[data-theme="noir-cyan"] {
   line-height: 1;
   transform: translateY(-0.125em);
 }
+
 
 .gain-math .math-foreign,
 .gain-math .math-foreign mjx-container {
@@ -1245,7 +1247,7 @@ body[data-theme="noir-cyan"] {
     scroll-padding: 0 10px;
     -webkit-overflow-scrolling: touch;
     height: calc(var(--carousel-height, 64px) + env(safe-area-inset-bottom));
-    touch-action: none;
+    touch-action: pan-x;
     overscroll-behavior-x: contain;
     scroll-behavior: smooth;
     scroll-padding: 0 10px;

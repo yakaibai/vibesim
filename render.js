@@ -2,6 +2,7 @@ import { snap, distancePointToSegment, GRID_SIZE, segmentLengthStats } from "./g
 import { routeAllConnections, routeDirtyConnections } from "./router.js";
 import { renderScope } from "./sim.js";
 import { buildBlockTemplates } from "./blocks/index.js";
+import { exprToLatex, estimateLatexWidth } from "./utils/expr.js";
 import {
   rotatePoint,
   getRotatedBounds,
@@ -14,7 +15,7 @@ import {
 
 export const FORCE_FULL_ROUTE_TIME_LIMIT_MS = 4000;
 
-const DEBUG_WIRE_CHECKS = true;
+const DEBUG_WIRE_CHECKS = false;
 const SELECTION_PAD = 10;
 const HOP_RADIUS = 4;
 
@@ -47,6 +48,15 @@ function renderSvgMath(group, mathMl, width, height) {
 
 let katexRetryScheduled = false;
 const katexQueue = new Set();
+
+function notifyUserFuncResize(group) {
+  const blockEl = group?.closest?.(".svg-block");
+  const blockId = blockEl?.dataset?.blockId;
+  if (blockId && typeof window !== "undefined" && window.vibesimResizeUserFunc) {
+    window.vibesimResizeUserFunc(blockId);
+  }
+}
+
 function queueKatexRender() {
   if (katexRetryScheduled) return;
   katexRetryScheduled = true;
@@ -66,6 +76,7 @@ function queueKatexRender() {
           }
           span.classList.remove("katex-target");
         });
+        notifyUserFuncResize(group);
       });
     } else if (katexQueue.size) {
       queueKatexRender();
@@ -89,10 +100,12 @@ function renderTeXMath(group, tex, width, height) {
   const span = document.createElement("span");
   span.className = "katex-target";
   span.dataset.tex = tex;
+  span.style.whiteSpace = "nowrap";
   if (window.katex && typeof window.katex.render === "function") {
     try {
       window.katex.render(tex, span, { throwOnError: false });
       span.classList.remove("katex-target");
+      notifyUserFuncResize(group);
     } catch {
       span.textContent = tex;
     }
@@ -817,6 +830,20 @@ export function createRenderer({ svg, blockLayer, wireLayer, overlayLayer, state
       if (Number.isFinite(paramWidth)) blockWidth = paramWidth;
       if (Number.isFinite(paramHeight)) blockHeight = paramHeight;
     }
+    if (typeof template.resize === "function") {
+      const probe = {
+        id,
+        type,
+        width: blockWidth,
+        height: blockHeight,
+        params,
+        inputs: template.inputs.length,
+        outputs: template.outputs.length,
+      };
+      template.resize(probe);
+      blockWidth = probe.width;
+      blockHeight = probe.height;
+    }
     const group = createSvgElement("g", {
       class: `svg-block type-${type}`,
       "data-block-id": id,
@@ -838,6 +865,9 @@ export function createRenderer({ svg, blockLayer, wireLayer, overlayLayer, state
     };
 
     template.render(block);
+    if (type === "userFunc") {
+      resizeUserFuncFromLabel(block, { force: true });
+    }
 
     const dragHeight = type === "scope" ? 24 : block.height;
     const minDragSize = 80;
@@ -2390,6 +2420,116 @@ export function createRenderer({ svg, blockLayer, wireLayer, overlayLayer, state
     updateConnections(true);
   }
 
+  function getSvgScale() {
+    const viewBox = svg.getAttribute("viewBox");
+    if (!viewBox) return { x: 1, y: 1 };
+    const parts = viewBox.split(" ").map((v) => Number(v));
+    if (parts.length !== 4 || parts.some((v) => !Number.isFinite(v))) {
+      return { x: 1, y: 1 };
+    }
+    const [, , vbWidth, vbHeight] = parts;
+    if (!vbWidth || !vbHeight) return { x: 1, y: 1 };
+    const scaleX = svg.clientWidth / vbWidth;
+    const scaleY = svg.clientHeight / vbHeight;
+    return { x: scaleX || 1, y: scaleY || 1 };
+  }
+
+  function resizeUserFuncFromLabel(block, { force = false } = {}) {
+    if (!block || block.type !== "userFunc") return;
+    const rawExpr = String(block.params?.expr || "u");
+    const latex = exprToLatex(rawExpr);
+    const estimateWidth = estimateLatexWidth(latex);
+    const rawEstimate = Math.max(120, Math.ceil(rawExpr.length * 14 + 60));
+    const mathGroup = block.group.querySelector(".userfunc-math");
+    const paddingX = 8;
+    let width = Math.max(estimateWidth, rawEstimate);
+    let height = 80;
+    let measuredWidth = 0;
+    const scale = getSvgScale();
+    if (mathGroup) {
+      for (let pass = 0; pass < 2; pass += 1) {
+        const foreign = mathGroup.querySelector("foreignObject");
+        if (foreign) {
+          foreign.setAttribute("width", width);
+          foreign.setAttribute("height", height);
+        }
+        const span = mathGroup.querySelector("span");
+        if (span && !span.classList.contains("katex-target")) {
+          const rect = span.getBoundingClientRect();
+          measuredWidth = rect.width / scale.x;
+          const needed = Math.ceil(measuredWidth + paddingX);
+          if (needed <= width && !force) break;
+          width = Math.max(width, needed);
+        }
+      }
+    }
+    if (!force && width === block.width && height === block.height) return;
+    block.width = width;
+    block.height = height;
+    const body = block.group.querySelector("rect.block-body");
+    if (body) {
+      body.setAttribute("width", width);
+      body.setAttribute("height", height);
+    }
+    if (mathGroup) {
+      const foreign = mathGroup.querySelector("foreignObject");
+      if (foreign) {
+        foreign.setAttribute("width", width);
+        foreign.setAttribute("height", height);
+      }
+    }
+    block.dynamicInputs = [{ x: 0, y: height / 2, side: "left" }];
+    block.dynamicOutputs = [{ x: width, y: height / 2, side: "right" }];
+    if (block.dragRect) {
+      const minDragSize = 80;
+      const dragHeight = height;
+      const dragWidth = Math.max(width, minDragSize);
+      const dragBoxHeight = Math.max(dragHeight, minDragSize);
+      const dragX = (width - dragWidth) / 2;
+      const dragY = (height - dragBoxHeight) / 2;
+      block.dragRect.setAttribute("x", dragX);
+      block.dragRect.setAttribute("y", dragY);
+      block.dragRect.setAttribute("width", dragWidth);
+      block.dragRect.setAttribute("height", dragBoxHeight);
+    }
+    const inputPorts = block.ports.filter((port) => port.type === "in").sort((a, b) => a.index - b.index);
+    const outputPorts = block.ports.filter((port) => port.type === "out").sort((a, b) => a.index - b.index);
+    inputPorts.forEach((port, index) => {
+      const spec = block.dynamicInputs[index];
+      if (spec) {
+        port.x = spec.x;
+        port.y = spec.y;
+        port.side = spec.side;
+        port.wireX = spec.x;
+        port.wireY = spec.y;
+        updatePortElement(port);
+      }
+    });
+    outputPorts.forEach((port, index) => {
+      const spec = block.dynamicOutputs[index];
+      if (spec) {
+        port.x = spec.x;
+        port.y = spec.y;
+        port.side = spec.side;
+        port.wireX = spec.x;
+        port.wireY = spec.y;
+        updatePortElement(port);
+      }
+    });
+    updateBlockTransform(block);
+    state.routingDirty = true;
+    updateConnections(true);
+  }
+
+  if (typeof window !== "undefined") {
+    window.vibesimResizeUserFunc = (blockId) => {
+      const block = state.blocks.get(blockId);
+      if (block?.type === "userFunc") {
+        resizeUserFuncFromLabel(block, { force: true });
+      }
+    };
+  }
+
           function rectsOverlap(a, b) {
     return a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top;
   }
@@ -2447,6 +2587,9 @@ export function createRenderer({ svg, blockLayer, wireLayer, overlayLayer, state
 
   function buildDebugSnapshot() {
     const summary = [];
+    if (window.vibesimDebugExtra) {
+      summary.push(window.vibesimDebugExtra);
+    }
     const viewBox = svg.getAttribute("viewBox") || "";
     summary.push(`viewBox=${viewBox}`);
     summary.push(`svgSize=${svg.clientWidth}x${svg.clientHeight}`);
@@ -2777,6 +2920,60 @@ export function createRenderer({ svg, blockLayer, wireLayer, overlayLayer, state
   }
 
   function updateBlockLabel(block) {
+    const template = blockTemplates[block.type];
+    if (template?.resize) {
+      const previous = { width: block.width, height: block.height };
+      template.resize(block);
+      const sizeChanged = previous.width !== block.width || previous.height !== block.height;
+      if (sizeChanged) {
+        const rect = block.group.querySelector("rect.block-body");
+        if (rect) {
+          rect.setAttribute("width", block.width);
+          rect.setAttribute("height", block.height);
+        }
+        if (block.dragRect) {
+          const minDragSize = 80;
+          const dragHeight = block.type === "scope" ? 24 : block.height;
+          const dragWidth = block.type === "scope" ? block.width : Math.max(block.width, minDragSize);
+          const dragBoxHeight = block.type === "scope" ? dragHeight : Math.max(dragHeight, minDragSize);
+          const dragX = block.type === "scope" ? 0 : (block.width - dragWidth) / 2;
+          const dragY = block.type === "scope" ? 0 : (block.height - dragBoxHeight) / 2;
+          block.dragRect.setAttribute("x", dragX);
+          block.dragRect.setAttribute("y", dragY);
+          block.dragRect.setAttribute("width", dragWidth);
+          block.dragRect.setAttribute("height", dragBoxHeight);
+        }
+        const inputPorts = block.ports.filter((port) => port.type === "in").sort((a, b) => a.index - b.index);
+        const outputPorts = block.ports.filter((port) => port.type === "out").sort((a, b) => a.index - b.index);
+        const dynamicInputs = Array.isArray(block.dynamicInputs) ? block.dynamicInputs : null;
+        const dynamicOutputs = Array.isArray(block.dynamicOutputs) ? block.dynamicOutputs : null;
+        inputPorts.forEach((port, index) => {
+          const spec = dynamicInputs ? dynamicInputs[index] : null;
+          if (spec) {
+            port.x = spec.x;
+            port.y = spec.y;
+            port.side = spec.side;
+          }
+          port.wireX = port.x;
+          port.wireY = port.y;
+          updatePortElement(port);
+        });
+        outputPorts.forEach((port, index) => {
+          const spec = dynamicOutputs ? dynamicOutputs[index] : null;
+          if (spec) {
+            port.x = spec.x;
+            port.y = spec.y;
+            port.side = spec.side;
+          }
+          port.wireX = port.x;
+          port.wireY = port.y;
+          updatePortElement(port);
+        });
+        updateBlockTransform(block);
+        state.routingDirty = true;
+        updateConnections(true);
+      }
+    }
     if (block.type === "constant") {
       const mathGroup = block.group.querySelector(".constant-math");
       if (mathGroup) renderTeXMath(mathGroup, `${block.params.value}`, block.width, block.height);
@@ -2810,6 +3007,14 @@ export function createRenderer({ svg, blockLayer, wireLayer, overlayLayer, state
     if (block.type === "delay") {
       const mathGroup = block.group.querySelector(".delay-math");
       if (mathGroup) renderTeXMath(mathGroup, "e^{-sT}", block.width, block.height);
+    }
+    if (block.type === "userFunc") {
+      const mathGroup = block.group.querySelector(".userfunc-math");
+      if (mathGroup) {
+        const latex = exprToLatex(block.params.expr || "u");
+        renderTeXMath(mathGroup, `\\scriptsize{${latex}}`, block.width, block.height);
+        resizeUserFuncFromLabel(block);
+      }
     }
     if (block.type === "labelSource" || block.type === "labelSink") {
       const mathGroup = block.group.querySelector(".label-math");

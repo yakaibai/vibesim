@@ -1,4 +1,5 @@
 import { getInputValues } from "./helpers.js";
+import { evalExpression } from "../../utils/expr.js";
 
 export const mathSimHandlers = {
   gain: {
@@ -80,6 +81,20 @@ export const mathSimHandlers = {
       const values = getInputValues(ctx, block);
       if (values[0] === undefined || values[1] === undefined) return null;
       const out = Math.max(values[0] ?? 0, values[1] ?? 0);
+      const prev = ctx.outputs.get(block.id);
+      ctx.outputs.set(block.id, out);
+      return { updated: prev !== out && !(Number.isNaN(prev) && Number.isNaN(out)) };
+    },
+  },
+  userFunc: {
+    algebraic: (ctx, block) => {
+      const values = getInputValues(ctx, block);
+      if (values[0] === undefined) return null;
+      const params = ctx.resolvedParams.get(block.id) || {};
+      const expr = String(params.expr ?? "u");
+      const vars = { ...(ctx.variables || {}), u: values[0] ?? 0 };
+      const out = evalExpression(expr, vars);
+      if (!Number.isFinite(out)) return null;
       const prev = ctx.outputs.get(block.id);
       ctx.outputs.set(block.id, out);
       return { updated: prev !== out && !(Number.isNaN(prev) && Number.isNaN(out)) };
