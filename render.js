@@ -823,6 +823,9 @@ export function createRenderer({ svg, blockLayer, wireLayer, overlayLayer, state
         params[key] = [...params[key]];
       }
     });
+    if (!params._visible || typeof params._visible !== "object") {
+      params._visible = {};
+    }
     let blockWidth = template.width;
     let blockHeight = template.height;
     if (type === "scope") {
@@ -863,12 +866,21 @@ export function createRenderer({ svg, blockLayer, wireLayer, overlayLayer, state
       params,
       group,
       ports: [],
+      paramLabels: {},
     };
 
     template.render(block);
     if (type === "userFunc") {
       resizeUserFuncFromLabel(block, { force: true });
     }
+
+    const paramDisplay = createSvgElement("text", {
+      class: "param-display",
+      "text-anchor": "middle",
+      display: "none",
+    });
+    group.appendChild(paramDisplay);
+    block.paramDisplay = paramDisplay;
 
     const dragHeight = type === "scope" ? 24 : block.height;
     const minDragSize = 80;
@@ -3164,6 +3176,41 @@ export function createRenderer({ svg, blockLayer, wireLayer, overlayLayer, state
     if (block.type === "fileSink") {
       // icon only
     }
+
+    updateParamDisplay(block);
+  }
+
+  function updateParamDisplay(block) {
+    const textEl = block.paramDisplay;
+    if (!textEl) return;
+    const visible = block.params?._visible;
+    if (!visible || typeof visible !== "object") {
+      textEl.setAttribute("display", "none");
+      textEl.textContent = "";
+      return;
+    }
+    const entries = Object.entries(visible).filter(([key, on]) => on && key !== "_visible");
+    if (!entries.length) {
+      textEl.setAttribute("display", "none");
+      textEl.textContent = "";
+      return;
+    }
+    while (textEl.firstChild) textEl.removeChild(textEl.firstChild);
+    const baseX = block.width / 2;
+    const baseY = block.height + 14;
+    entries.forEach(([key], index) => {
+      const label = (block.paramLabels && block.paramLabels[key]) || key;
+      const value = block.params?.[key];
+      const valueText = value == null ? "" : String(value);
+      const line = `${label}: ${valueText}`;
+      const tspan = createSvgElement("tspan", {
+        x: baseX,
+        y: baseY + index * 12,
+      });
+      tspan.textContent = line;
+      textEl.appendChild(tspan);
+    });
+    textEl.setAttribute("display", "block");
   }
 
   function clientToSvg(clientX, clientY) {

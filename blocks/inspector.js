@@ -15,6 +15,60 @@ export const createInspector = ({
         return Number.isFinite(num) ? num : v;
       });
 
+  const setupParamVisibility = (block) => {
+    if (!block || !inspectorBody) return;
+    const paramRows = Array.from(inspectorBody.querySelectorAll(".param"));
+    if (!paramRows.length) return;
+    if (!block.params) block.params = {};
+    if (!block.params._visible || typeof block.params._visible !== "object") {
+      block.params._visible = {};
+    }
+    if (!block.paramLabels) block.paramLabels = {};
+
+    paramRows.forEach((row) => {
+      const input = row.querySelector("[data-edit]");
+      if (!input) return;
+      const key = input.getAttribute("data-edit");
+      if (!key) return;
+      const textNodes = Array.from(row.childNodes)
+        .filter((node) => node.nodeType === Node.TEXT_NODE)
+        .map((node) => node.textContent || "")
+        .join(" ")
+        .trim();
+      const labelText = textNodes || key;
+      block.paramLabels[key] = labelText;
+
+      if (!input.dataset.paramVisibilityBound) {
+        input.dataset.paramVisibilityBound = "true";
+        input.addEventListener("input", () => {
+          renderer.updateBlockLabel(block);
+        });
+        if (input.type === "checkbox") {
+          input.addEventListener("change", () => {
+            renderer.updateBlockLabel(block);
+          });
+        }
+      }
+
+      const updateState = () => {
+        row.classList.toggle("param-visible", Boolean(block.params._visible[key]));
+      };
+      updateState();
+
+      if (!row.dataset.paramVisibilityBound) {
+        row.dataset.paramVisibilityBound = "true";
+        row.addEventListener("click", (event) => {
+          const target = event.target;
+          if (!(target instanceof Element)) return;
+          if (target.closest("input, select, textarea, button, a")) return;
+          block.params._visible[key] = !block.params._visible[key];
+          updateState();
+          renderer.updateBlockLabel(block);
+        });
+      }
+    });
+  };
+
   const renderInspector = (block) => {
     if (!block) {
       inspectorBody.textContent = "Select a block or wire.";
@@ -666,6 +720,8 @@ export const createInspector = ({
     } else {
       inspectorBody.textContent = `Selected ${block.type}`;
     }
+
+    setupParamVisibility(block);
   };
 
   return { renderInspector };

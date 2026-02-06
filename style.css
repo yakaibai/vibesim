@@ -1165,6 +1165,20 @@ body[data-theme="noir-cyan"] {
   font-size: 0.9rem;
 }
 
+.param.param-visible {
+  font-weight: 600;
+}
+
+.param.param-visible input,
+.param.param-visible select {
+  font-weight: 400;
+}
+
+.param-display {
+  fill: #9aa0a6;
+  font-size: 11px;
+}
+
 .param > input,
 .param > select,
 .runtime input,
