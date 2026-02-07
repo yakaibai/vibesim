@@ -55,6 +55,10 @@
       <aside id="blockLibrary" class="toolbox panel panel-left">
         <h2>Block Library</h2>
         <div id="blockLibraryGroups"></div>
+        <div class="button-row">
+          <button id="loadSubsystemBtn" class="secondary">Load Subsystem</button>
+        </div>
+        <input id="loadSubsystemInput" type="file" accept=".yaml,.yml,.txt,text/yaml,text/plain,application/x-yaml,application/yaml,*/*" hidden>
       </aside>
 
       <div class="right-column">
@@ -79,7 +83,7 @@
             <button id="saveBtn" class="secondary">Save</button>
             <button id="clearBtn" class="danger">Clear</button>
           </div>
-          <input id="loadInput" type="file" accept=".yaml,.yml,text/yaml" hidden>
+          <input id="loadInput" type="file" accept=".yaml,.yml,.txt,text/yaml,text/plain,application/x-yaml,application/yaml,*/*" hidden>
           <div id="status" class="status">Idle</div>
         </div>
 
@@ -161,6 +165,13 @@
 
     <section class="workspace">
       <div id="canvas">
+        <div class="subsystem-nav">
+          <button id="subsystemUpBtn" class="floating-btn" aria-label="Parent diagram" title="Parent diagram" hidden>
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M12 19V5M6 11l6-6 6 6" />
+            </svg>
+          </button>
+        </div>
         <div class="floating-controls">
           <button id="runBtn" class="floating-btn" aria-label="Run" title="Run" data-action="run">
             <svg viewBox="0 0 24 24" aria-hidden="true">

@@ -691,6 +691,17 @@ body[data-theme="noir-cyan"] {
   flex-wrap: wrap;
 }
 
+.subsystem-nav {
+  position: absolute;
+  top: 14px;
+  left: 14px;
+  z-index: 5;
+}
+
+#subsystemUpBtn[hidden] {
+  display: none !important;
+}
+
 .floating-btn {
   width: 40px;
   height: 40px;
@@ -1020,6 +1031,12 @@ body[data-theme="noir-cyan"] {
   font-size: 0.30em;
 }
 
+.subsystem-port-label {
+  fill: #6d727a;
+  font-size: 10px;
+  dominant-baseline: middle;
+}
+
 
 .sum-sign {
   fill: #3c3c3c;
@@ -1183,12 +1200,20 @@ body[data-theme="noir-cyan"] {
 }
 
 .param.param-visible {
-  font-weight: 600;
+  font-weight: 400;
 }
 
 .param.param-visible input,
 .param.param-visible select {
   font-weight: 400;
+}
+
+.param .param-name {
+  font-weight: 400;
+}
+
+.param.param-visible .param-name {
+  font-weight: 700;
 }
 
 .param-display {

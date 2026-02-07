@@ -4,6 +4,7 @@ export const createInspector = ({
   renderer,
   renderScope,
   signalDiagramChanged,
+  onOpenSubsystem,
 }) => {
   const parseList = (value) =>
     value
@@ -37,6 +38,18 @@ export const createInspector = ({
         .trim();
       const labelText = textNodes || key;
       block.paramLabels[key] = labelText;
+      let nameEl = row.querySelector(".param-name");
+      if (!nameEl) {
+        Array.from(row.childNodes)
+          .filter((node) => node.nodeType === Node.TEXT_NODE)
+          .forEach((node) => row.removeChild(node));
+        nameEl = document.createElement("span");
+        nameEl.className = "param-name";
+        nameEl.textContent = labelText;
+        row.insertBefore(nameEl, input);
+      } else {
+        nameEl.textContent = labelText;
+      }
 
       if (!input.dataset.paramVisibilityBound) {
         input.dataset.paramVisibilityBound = "true";
@@ -344,6 +357,7 @@ export const createInspector = ({
         <label class="param">Label name
           <input type="text" data-edit="name" value="${block.params.name || ""}">
         </label>
+        <label class="param"><input type="checkbox" data-edit="isExternalPort" ${block.params.isExternalPort === true ? "checked" : ""}> Is external port</label>
         ${block.type === "labelSink" ? `<label class="param"><input type="checkbox" data-edit="showNode" ${block.params.showNode !== false ? "checked" : ""}> Show node</label>` : ""}
       `;
       const nameInput = inspectorBody.querySelector("input[data-edit='name']");
@@ -351,6 +365,13 @@ export const createInspector = ({
         block.params.name = nameInput.value.trim();
         renderer.updateBlockLabel(block);
       });
+      const isExternalPortInput = inspectorBody.querySelector("input[data-edit='isExternalPort']");
+      if (isExternalPortInput) {
+        isExternalPortInput.addEventListener("change", () => {
+          block.params.isExternalPort = isExternalPortInput.checked;
+          renderer.updateBlockLabel(block);
+        });
+      }
       const showNodeInput = inspectorBody.querySelector("input[data-edit='showNode']");
       if (showNodeInput) {
         showNodeInput.addEventListener("change", () => {
@@ -739,6 +760,30 @@ export const createInspector = ({
         block.params.path = input.value;
         renderer.updateBlockLabel(block);
       });
+    } else if (block.type === "subsystem") {
+      const inputCount = Array.isArray(block.params.externalInputs) ? block.params.externalInputs.length : 0;
+      const outputCount = Array.isArray(block.params.externalOutputs) ? block.params.externalOutputs.length : 0;
+      inspectorBody.innerHTML = `
+        <label class="param">Name
+          <input type="text" data-edit="name" value="${block.params.name || "Subsystem"}">
+        </label>
+        <div class="param">Inputs: ${inputCount}</div>
+        <div class="param">Outputs: ${outputCount}</div>
+        <button type="button" class="secondary" data-action="open-subsystem">Open Subsystem</button>
+      `;
+      const nameInput = inspectorBody.querySelector("input[data-edit='name']");
+      if (nameInput) {
+        nameInput.addEventListener("input", () => {
+          block.params.name = nameInput.value.trim();
+          renderer.updateBlockLabel(block);
+        });
+      }
+      const openBtn = inspectorBody.querySelector("button[data-action='open-subsystem']");
+      if (openBtn) {
+        openBtn.addEventListener("click", () => {
+          if (typeof onOpenSubsystem === "function") onOpenSubsystem(block);
+        });
+      }
     } else {
       inspectorBody.textContent = `Selected ${block.type}`;
     }

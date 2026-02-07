@@ -18,13 +18,14 @@ export function simulate({ state, runtimeInput, statusEl, downloadFile }) {
   const variables = state.variables || { pi: Math.PI, e: Math.E };
   const resolveParam = (value, block, key) => {
     if (block.type === "labelSource" || block.type === "labelSink") {
-      if (key === "name") return value;
+      if (key === "name" || key === "isExternalPort") return value;
     }
     if (block.type === "userFunc" && key === "expr") return value;
     if (block.type === "fileSource" || block.type === "fileSink") {
       if (key === "path" || key === "times" || key === "values" || key === "lastCsv") return value;
     }
     if (block.type === "switch" && key === "condition") return value;
+    if (block.type === "subsystem" && (key === "name" || key === "externalInputs" || key === "externalOutputs" || key === "subsystem")) return value;
     if (key === "signs") return value;
     if (Array.isArray(value)) return value.map((v) => {
       const out = evalExpression(v, variables);

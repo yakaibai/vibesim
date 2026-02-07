@@ -18,6 +18,9 @@ const clearBtn = document.getElementById("clearBtn");
 const saveBtn = document.getElementById("saveBtn");
 const loadBtn = document.getElementById("loadBtn");
 const loadInput = document.getElementById("loadInput");
+const loadSubsystemBtn = document.getElementById("loadSubsystemBtn");
+const loadSubsystemInput = document.getElementById("loadSubsystemInput");
+const subsystemUpBtn = document.getElementById("subsystemUpBtn");
 const codegenBtn = document.getElementById("codegenBtn");
 const codegenLang = document.getElementById("codegenLang");
 const simDt = document.getElementById("simDt");
@@ -80,7 +83,20 @@ const applyTheme = (themeId) => {
 const renderBlockLibrary = () => {
   if (!blockLibraryGroups) return;
   blockLibraryGroups.innerHTML = "";
-  blockLibrary.forEach((group) => {
+  const groups = [...blockLibrary];
+  if (state.loadedSubsystems.size) {
+    const subsystemBlocks = Array.from(state.loadedSubsystems.entries()).map(([key, spec]) => ({
+      type: "subsystem",
+      label: spec.name,
+      subsystemKey: key,
+    }));
+    groups.push({
+      id: "subsystems",
+      title: "Subsystems",
+      blocks: subsystemBlocks,
+    });
+  }
+  groups.forEach((group) => {
     const details = document.createElement("details");
     details.className = "tool-group";
     const summary = document.createElement("summary");
@@ -90,6 +106,7 @@ const renderBlockLibrary = () => {
       const button = document.createElement("button");
       button.className = "tool";
       button.dataset.type = item.type;
+      if (item.subsystemKey) button.dataset.subsystemKey = item.subsystemKey;
       button.textContent = item.label;
       details.appendChild(button);
     });
@@ -134,6 +151,8 @@ const state = {
   diagramName: "vibesim",
   selectedLoopKey: null,
   sampleTime: 0.01,
+  loadedSubsystems: new Map(),
+  subsystemStack: [],
 };
 
 let fitToDiagram = () => {};
@@ -141,6 +160,129 @@ let updateStabilityPanel = () => {};
 const signalDiagramChanged = () => {
   window.dispatchEvent(new Event("diagramChanged"));
 };
+
+const deepClone = (value) => JSON.parse(JSON.stringify(value));
+
+const connectionKey = (conn) =>
+  `${conn.from}:${Number(conn.fromIndex ?? 0)}->${conn.to}:${Number(conn.toIndex ?? 0)}`;
+
+const captureUiState = () => {
+  const routePoints = {};
+  state.connections.forEach((conn) => {
+    if (!Array.isArray(conn.points) || conn.points.length < 2) return;
+    routePoints[connectionKey(conn)] = conn.points.map((pt) => ({ x: Number(pt.x), y: Number(pt.y) }));
+  });
+  const scopeState = {};
+  state.blocks.forEach((block) => {
+    if (block.type === "scope" && block.scopeData) {
+      scopeState[block.id] = { kind: "scope", data: deepClone(block.scopeData) };
+    } else if (block.type === "xyScope" && block.xyScopeData) {
+      scopeState[block.id] = { kind: "xyScope", data: deepClone(block.xyScopeData) };
+    }
+  });
+  return { routePoints, scopeState };
+};
+
+const buildSubsystemSpec = (data, fallbackName = "Subsystem") => {
+  const blocks = Array.isArray(data?.blocks) ? deepClone(data.blocks) : [];
+  const connections = Array.isArray(data?.connections) ? deepClone(data.connections) : [];
+  if (!blocks.length) throw new Error("Subsystem YAML has no blocks");
+  const name = String(data?.name || fallbackName).trim() || fallbackName;
+  const externalInputs = blocks
+    .filter((b) => b?.type === "labelSource" && b?.params?.isExternalPort === true)
+    .sort((a, b) => (Number(a?.y) || 0) - (Number(b?.y) || 0))
+    .map((b) => ({ id: b.id, name: String(b?.params?.name || b.id) }));
+  const externalOutputs = blocks
+    .filter((b) => b?.type === "labelSink" && b?.params?.isExternalPort === true)
+    .sort((a, b) => (Number(a?.y) || 0) - (Number(b?.y) || 0))
+    .map((b) => ({ id: b.id, name: String(b?.params?.name || b.id) }));
+  if (!externalInputs.length && !externalOutputs.length) {
+    throw new Error("No external ports found. Mark label blocks with 'Is external port'");
+  }
+  return {
+    name,
+    blocks,
+    connections,
+    externalInputs,
+    externalOutputs,
+  };
+};
+
+const updateSubsystemNavUi = () => {
+  if (!subsystemUpBtn) return;
+  subsystemUpBtn.hidden = state.subsystemStack.length === 0;
+};
+
+function openSubsystemFromBlock(block) {
+  if (!block || block.type !== "subsystem") return;
+  const spec = block.params?.subsystem;
+  if (!spec || !Array.isArray(spec.blocks) || !Array.isArray(spec.connections)) {
+    statusEl.textContent = "Subsystem is missing internal diagram data.";
+    return;
+  }
+  const snapshot = serializeDiagram(state);
+  const parentUiState = captureUiState();
+  state.subsystemStack.push({
+    parentDiagram: snapshot,
+    parentUiState,
+    hostBlockId: block.id,
+  });
+  updateSubsystemNavUi();
+  loadDiagram(
+    {
+      name: String(spec.name || block.params?.name || "Subsystem"),
+      blocks: deepClone(spec.blocks),
+      connections: deepClone(spec.connections),
+      variables: snapshot.variables || "",
+      sampleTime: Number(snapshot.sampleTime) || state.sampleTime || 0.01,
+      runtime: Number(snapshot.runtime) || Number(runtimeInput?.value) || 1,
+    },
+    { preserveSubsystemStack: true, restoreUiState: deepClone(spec.uiState || null) }
+  );
+  renderer.selectBlock(null);
+  renderInspector(null);
+  statusEl.textContent = `Opened subsystem: ${block.params?.name || "Subsystem"}`;
+}
+
+function closeSubsystemView() {
+  if (!state.subsystemStack.length) return;
+  const innerSnapshot = serializeDiagram(state);
+  const entry = state.subsystemStack.pop();
+  const innerUiState = captureUiState();
+  loadDiagram(entry.parentDiagram, {
+    preserveSubsystemStack: true,
+    restoreUiState: deepClone(entry.parentUiState || null),
+  });
+  const host = state.blocks.get(entry.hostBlockId);
+  if (host && host.type === "subsystem") {
+    let spec;
+    try {
+      spec = buildSubsystemSpec(innerSnapshot, host.params?.name || "Subsystem");
+    } catch (error) {
+      spec = {
+        name: String(host.params?.name || innerSnapshot.name || "Subsystem"),
+        blocks: deepClone(innerSnapshot.blocks || []),
+        connections: deepClone(innerSnapshot.connections || []),
+        externalInputs: deepClone(host.params?.externalInputs || []),
+        externalOutputs: deepClone(host.params?.externalOutputs || []),
+      };
+      statusEl.textContent =
+        `Returned to parent (warning: ${error?.message || "invalid subsystem external ports"})`;
+    }
+    host.params.subsystem = deepClone(spec);
+    host.params.subsystem.uiState = deepClone(innerUiState);
+    host.params.externalInputs = deepClone(spec.externalInputs || []);
+    host.params.externalOutputs = deepClone(spec.externalOutputs || []);
+    if (!host.params.name) host.params.name = spec.name;
+    renderer.updateBlockLabel(host);
+    renderer.selectBlock(host.id);
+    renderInspector(host);
+    signalDiagramChanged();
+  } else {
+    statusEl.textContent = "Returned to parent";
+  }
+  updateSubsystemNavUi();
+}
 
 const listLoopCandidates = () => {
   const blocks = Array.from(state.blocks.values()).map((block) => ({
@@ -314,6 +456,9 @@ const renderer = createRenderer({
     focusPropertiesPanel();
     updateStabilityPanel();
   },
+  onOpenSubsystem: (block) => {
+    openSubsystemFromBlock(block);
+  },
 });
 
 renderInspector = createInspector({
@@ -322,6 +467,7 @@ renderInspector = createInspector({
   renderer,
   renderScope,
   signalDiagramChanged,
+  onOpenSubsystem: (block) => openSubsystemFromBlock(block),
 }).renderInspector;
 
 if (inspectorBody) {
@@ -457,7 +603,11 @@ function serializeDiagram(state) {
   };
 }
 
-function loadDiagram(data) {
+function loadDiagram(data, options = {}) {
+  const preserveSubsystemStack = Boolean(options?.preserveSubsystemStack);
+  const restoreUiState = options?.restoreUiState && typeof options.restoreUiState === "object"
+    ? options.restoreUiState
+    : null;
   if (!data || typeof data !== "object") throw new Error("Invalid diagram file");
   const blocks = Array.isArray(data.blocks) ? data.blocks : [];
   const connections = Array.isArray(data.connections) ? data.connections : [];
@@ -482,6 +632,10 @@ function loadDiagram(data) {
     const entries = state.variablesDisplay.join("\n");
     variablesPreview.textContent = entries || "No variables defined.";
   }
+  if (!preserveSubsystemStack) {
+    state.subsystemStack = [];
+    updateSubsystemNavUi();
+  }
   renderer.clearWorkspace();
   state.routingDirty = false;
   state.dirtyBlocks.clear();
@@ -504,19 +658,53 @@ function loadDiagram(data) {
     renderer.createConnection(conn.from, conn.to, conn.toIndex ?? 0, conn.fromIndex ?? 0);
   });
 
+  if (restoreUiState?.routePoints && typeof restoreUiState.routePoints === "object") {
+    state.connections.forEach((conn) => {
+      const key = connectionKey(conn);
+      const pts = restoreUiState.routePoints[key];
+      if (!Array.isArray(pts) || pts.length < 2) return;
+      conn.points = pts
+        .map((pt) => ({ x: Number(pt?.x), y: Number(pt?.y) }))
+        .filter((pt) => Number.isFinite(pt.x) && Number.isFinite(pt.y));
+    });
+  }
+
+  if (restoreUiState?.scopeState && typeof restoreUiState.scopeState === "object") {
+    Object.entries(restoreUiState.scopeState).forEach(([blockId, entry]) => {
+      const block = state.blocks.get(blockId);
+      if (!block || !entry || typeof entry !== "object") return;
+      if (entry.kind === "scope" && block.type === "scope") {
+        block.scopeData = deepClone(entry.data);
+        renderScope(block);
+      } else if (entry.kind === "xyScope" && block.type === "xyScope") {
+        block.xyScopeData = deepClone(entry.data);
+        renderScope(block);
+      }
+    });
+  }
+
   fitToDiagram();
-  // Show blocks and simple wires immediately, then do the expensive route.
-  state.fastRouting = true;
-  state.routingDirty = true;
-  state.dirtyConnections = new Set(state.connections);
-  renderer.updateConnections(true);
-  requestAnimationFrame(() => {
-    setTimeout(() => {
-      state.fastRouting = false;
-      renderer.forceFullRoute(FORCE_FULL_ROUTE_TIME_LIMIT_MS);
-      if (typeof updateStabilityPanel === "function") updateStabilityPanel();
-    }, 0);
-  });
+  if (restoreUiState?.routePoints) {
+    state.fastRouting = false;
+    state.routingDirty = false;
+    if (state.dirtyBlocks) state.dirtyBlocks.clear();
+    if (state.dirtyConnections) state.dirtyConnections.clear();
+    if (renderer.renderCurrentWirePaths) renderer.renderCurrentWirePaths();
+    if (typeof updateStabilityPanel === "function") updateStabilityPanel();
+  } else {
+    // Show blocks and simple wires immediately, then do the expensive route.
+    state.fastRouting = true;
+    state.routingDirty = true;
+    state.dirtyConnections = new Set(state.connections);
+    renderer.updateConnections(true);
+    requestAnimationFrame(() => {
+      setTimeout(() => {
+        state.fastRouting = false;
+        renderer.forceFullRoute(FORCE_FULL_ROUTE_TIME_LIMIT_MS);
+        if (typeof updateStabilityPanel === "function") updateStabilityPanel();
+      }, 0);
+    });
+  }
 }
 
 function toYAML(data) {
@@ -698,6 +886,12 @@ function parseYAML(text) {
 }
 
 function init() {
+  updateSubsystemNavUi();
+  if (subsystemUpBtn) {
+    subsystemUpBtn.addEventListener("click", () => {
+      closeSubsystemView();
+    });
+  }
   if (diagramNameInput) {
     diagramNameInput.value = state.diagramName;
     diagramNameInput.addEventListener("input", () => {
@@ -1115,14 +1309,28 @@ function init() {
   updateVariables();
 
   renderBlockLibrary();
-  document.querySelectorAll(".tool").forEach((button) => {
-    button.addEventListener("click", () => {
+  if (blockLibraryGroups) {
+    blockLibraryGroups.addEventListener("click", (event) => {
+      const button = event.target.closest(".tool");
+      if (!button) return;
       const type = button.dataset.type;
+      const subsystemKey = button.dataset.subsystemKey || "";
       const offset = state.blocks.size * 20;
       const centerX = viewBox.x + viewBox.w / 2;
       const centerY = viewBox.y + viewBox.h / 2;
       try {
-        renderer.createBlock(type, centerX + offset, centerY + offset);
+        const options = {};
+        if (type === "subsystem" && subsystemKey) {
+          const spec = state.loadedSubsystems.get(subsystemKey);
+          if (!spec) throw new Error("Subsystem spec not found");
+          options.params = {
+            name: spec.name,
+            externalInputs: deepClone(spec.externalInputs),
+            externalOutputs: deepClone(spec.externalOutputs),
+            subsystem: deepClone(spec),
+          };
+        }
+        renderer.createBlock(type, centerX + offset, centerY + offset, options);
         statusEl.textContent = `Added ${type}`;
         updateStabilityPanel();
       } catch (error) {
@@ -1133,7 +1341,7 @@ function init() {
         }
       }
     });
-  });
+  }
 
   const handleRun = () => simulate({ state, runtimeInput, statusEl, downloadFile });
   if (simDt) {
@@ -1222,6 +1430,38 @@ function init() {
         }
       };
       reader.readAsText(file);
+      loadInput.value = "";
+    });
+  }
+
+  if (loadSubsystemBtn && loadSubsystemInput) {
+    loadSubsystemBtn.addEventListener("click", () => loadSubsystemInput.click());
+    loadSubsystemInput.addEventListener("change", () => {
+      const file = loadSubsystemInput.files?.[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = () => {
+        try {
+          const text = String(reader.result || "");
+          const data = parseYAML(text);
+          const baseName = file.name.replace(/\.(ya?ml)$/i, "") || "Subsystem";
+          const spec = buildSubsystemSpec(data, baseName);
+          const keyBase = sanitizeFilename(spec.name).toLowerCase() || "subsystem";
+          let key = keyBase;
+          let index = 2;
+          while (state.loadedSubsystems.has(key)) {
+            key = `${keyBase}_${index}`;
+            index += 1;
+          }
+          state.loadedSubsystems.set(key, spec);
+          renderBlockLibrary();
+          statusEl.textContent = `Loaded subsystem: ${spec.name}`;
+        } catch (error) {
+          statusEl.textContent = `Subsystem load error: ${error?.message || error}`;
+        }
+      };
+      reader.readAsText(file);
+      loadSubsystemInput.value = "";
     });
   }
 

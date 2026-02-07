@@ -315,10 +315,27 @@ function renderLabelNode(block, label, { showNode = true } = {}) {
   const group = block.group;
   const mathGroup = createSvgElement("g", { class: "label-math", transform: "translate(0,-24)" });
   group.appendChild(mathGroup);
-  renderTeXMath(mathGroup, label || "", block.width, block.height);
+  renderTeXMath(mathGroup, formatLabelTeX(label), block.width, block.height);
   if (showNode) {
     group.appendChild(createSvgElement("circle", { cx: 20, cy: 20, r: 5, class: "label-node" }));
   }
+}
+
+function formatLabelTeX(label) {
+  const text = String(label || "").trim();
+  if (!text) return "";
+  // Keep explicit TeX commands unchanged (e.g. \theta, \dot{x})
+  if (text.startsWith("\\")) return text;
+  // Single-character symbols (x, y, t) should keep math italics
+  if (text.length <= 1) return text;
+  const escaped = text
+    .replace(/\\/g, "\\textbackslash{}")
+    .replace(/([{}])/g, "\\$1")
+    .replace(/_/g, "\\_")
+    .replace(/\^/g, "\\textasciicircum{}")
+    .replace(/~/g, "\\textasciitilde{}")
+    .replace(/ /g, "\\ ");
+  return `\\mathrm{${escaped}}`;
 }
 
 export function buildFallbackPath(fromPos, toPos) {
@@ -728,7 +745,16 @@ const blockTemplates = buildBlockTemplates({
 
 
 
-export function createRenderer({ svg, blockLayer, wireLayer, overlayLayer, state, onSelectBlock, onSelectConnection }) {
+export function createRenderer({
+  svg,
+  blockLayer,
+  wireLayer,
+  overlayLayer,
+  state,
+  onSelectBlock,
+  onSelectConnection,
+  onOpenSubsystem,
+}) {
   const ensureWireArrowMarker = () => {
     let defs = svg.querySelector("defs");
     if (!defs) {
@@ -950,6 +976,7 @@ export function createRenderer({ svg, blockLayer, wireLayer, overlayLayer, state
     updateBlockTransform(block);
     enableDrag(block, dragRect);
     enableSelection(block, dragRect);
+    enableSubsystemOpen(block, dragRect);
     enableScopeHover(block);
     state.routingDirty = true;
     updateConnections();
@@ -1321,6 +1348,57 @@ export function createRenderer({ svg, blockLayer, wireLayer, overlayLayer, state
         selectBlock(block.id);
       }
     });
+  }
+
+  function enableSubsystemOpen(block, handle) {
+    if (!block || block.type !== "subsystem" || !handle) return;
+    const LONG_PRESS_MS = 550;
+    const MOVE_THRESHOLD = 6;
+    let timer = null;
+    let start = null;
+    let pointerId = null;
+    let fired = false;
+    const cancelTimer = () => {
+      if (timer) {
+        clearTimeout(timer);
+        timer = null;
+      }
+      start = null;
+      pointerId = null;
+      fired = false;
+    };
+    handle.addEventListener("dblclick", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      if (typeof onOpenSubsystem === "function") onOpenSubsystem(block);
+    });
+    handle.addEventListener("pointerdown", (event) => {
+      if (event.button !== 0) return;
+      cancelTimer();
+      start = { x: event.clientX, y: event.clientY };
+      pointerId = event.pointerId;
+      timer = setTimeout(() => {
+        timer = null;
+        fired = true;
+        state.suppressNextCanvasClick = true;
+        if (typeof onOpenSubsystem === "function") onOpenSubsystem(block);
+      }, LONG_PRESS_MS);
+    });
+    handle.addEventListener("pointermove", (event) => {
+      if (!timer || pointerId !== event.pointerId || !start) return;
+      if (Math.hypot(event.clientX - start.x, event.clientY - start.y) > MOVE_THRESHOLD) {
+        cancelTimer();
+      }
+    });
+    const finish = (event) => {
+      if (pointerId != null && pointerId !== event.pointerId) return;
+      if (fired) {
+        state.suppressNextCanvasClick = true;
+      }
+      cancelTimer();
+    };
+    handle.addEventListener("pointerup", finish);
+    handle.addEventListener("pointercancel", finish);
   }
 
   function updatePortVisibility() {
@@ -3085,7 +3163,7 @@ export function createRenderer({ svg, blockLayer, wireLayer, overlayLayer, state
     }
     if (block.type === "labelSource" || block.type === "labelSink") {
       const mathGroup = block.group.querySelector(".label-math");
-      if (mathGroup) renderTeXMath(mathGroup, block.params.name || "", block.width, block.height);
+      if (mathGroup) renderTeXMath(mathGroup, formatLabelTeX(block.params.name || ""), block.width, block.height);
       if (block.type === "labelSink") {
         const showNode = block.params.showNode !== false;
         const circle = block.group.querySelector("circle.label-node");
@@ -3199,6 +3277,52 @@ export function createRenderer({ svg, blockLayer, wireLayer, overlayLayer, state
     if (block.type === "fileSink") {
       // icon only
     }
+    if (block.type === "subsystem") {
+      const title = block.group.querySelector(".block-text");
+      if (title) title.textContent = String(block.params?.name || "Subsystem");
+      const labelLayer = block.group.querySelector(".subsystem-port-labels");
+      if (labelLayer) {
+        while (labelLayer.firstChild) labelLayer.removeChild(labelLayer.firstChild);
+        const inNames = Array.isArray(block.params?.externalInputs) ? block.params.externalInputs : [];
+        const outNames = Array.isArray(block.params?.externalOutputs) ? block.params.externalOutputs : [];
+        const inputPorts = block.ports
+          .filter((p) => p.type === "in")
+          .sort((a, b) => a.index - b.index);
+        const outputPorts = block.ports
+          .filter((p) => p.type === "out")
+          .sort((a, b) => a.index - b.index);
+        inputPorts.forEach((port, idx) => {
+          const name = String(inNames[idx]?.name || `in${idx + 1}`);
+          labelLayer.appendChild(
+            createSvgElement(
+              "text",
+              {
+                x: 7,
+                y: port.y + 3,
+                class: "subsystem-port-label",
+                "text-anchor": "start",
+              },
+              name
+            )
+          );
+        });
+        outputPorts.forEach((port, idx) => {
+          const name = String(outNames[idx]?.name || `out${idx + 1}`);
+          labelLayer.appendChild(
+            createSvgElement(
+              "text",
+              {
+                x: block.width - 7,
+                y: port.y + 3,
+                class: "subsystem-port-label",
+                "text-anchor": "end",
+              },
+              name
+            )
+          );
+        });
+      }
+    }
 
     updateParamDisplay(block);
   }
@@ -3276,6 +3400,11 @@ export function createRenderer({ svg, blockLayer, wireLayer, overlayLayer, state
     updateSelectionBox,
     clientToSvg,
     forceFullRoute,
+    renderCurrentWirePaths: () => {
+      applyWirePaths(new Map());
+      updateSelectionBox();
+      refreshDebugLog();
+    },
     resizeBlock,
     setLoopHighlight,
   };
