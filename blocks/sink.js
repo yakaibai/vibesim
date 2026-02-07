@@ -21,7 +21,7 @@ export const createSinkTemplates = (helpers) => {
         { x: 0, y: 120, side: "left" },
       ],
       outputs: [],
-      defaultParams: { tMin: "", tMax: "", yMin: "", yMax: "", width: 220, height: 160 },
+      defaultParams: { tMin: "", tMax: "", yMin: "", yMax: "", width: 220, height: 160, showTickLabels: false },
       render: (block) => {
         const group = block.group;
         const body = svgRect(0, 0, block.width, block.height, "block-body");
@@ -52,8 +52,12 @@ export const createSinkTemplates = (helpers) => {
         axesGroup.appendChild(yAxis);
         const xTicks = Array.from({ length: 9 }, () => createSvgElement("line", { class: "scope-tick" }));
         const yTicks = Array.from({ length: 9 }, () => createSvgElement("line", { class: "scope-tick" }));
+        const xTickLabels = Array.from({ length: 9 }, () => createSvgElement("text", { class: "scope-tick-label scope-tick-label-x" }));
+        const yTickLabels = Array.from({ length: 9 }, () => createSvgElement("text", { class: "scope-tick-label scope-tick-label-y" }));
         xTicks.forEach((tick) => axesGroup.appendChild(tick));
         yTicks.forEach((tick) => axesGroup.appendChild(tick));
+        xTickLabels.forEach((label) => axesGroup.appendChild(label));
+        yTickLabels.forEach((label) => axesGroup.appendChild(label));
         group.appendChild(axesGroup);
         const pathsGroup = createSvgElement("g", { class: "scope-paths", "clip-path": `url(#${clipId})` });
         group.appendChild(pathsGroup);
@@ -64,7 +68,7 @@ export const createSinkTemplates = (helpers) => {
           return path;
         });
         block.scopePlot = plot;
-        block.scopeAxes = { xAxis, yAxis, xTicks, yTicks };
+        block.scopeAxes = { xAxis, yAxis, xTicks, yTicks, xTickLabels, yTickLabels };
         block.scopeClipRect = clipRect;
         const hintColors = ["#f6d63b", "#d35cff", "#35d1ff"];
         const hintRadius = 3;
@@ -89,7 +93,7 @@ export const createSinkTemplates = (helpers) => {
         { x: 0, y: 110, side: "left" },
       ],
       outputs: [],
-      defaultParams: { xMin: "", xMax: "", yMin: "", yMax: "", width: 220, height: 160 },
+      defaultParams: { xMin: "", xMax: "", yMin: "", yMax: "", width: 220, height: 160, showTickLabels: false },
       render: (block) => {
         const group = block.group;
         const body = svgRect(0, 0, block.width, block.height, "block-body");
@@ -120,8 +124,12 @@ export const createSinkTemplates = (helpers) => {
         axesGroup.appendChild(yAxis);
         const xTicks = Array.from({ length: 9 }, () => createSvgElement("line", { class: "scope-tick" }));
         const yTicks = Array.from({ length: 9 }, () => createSvgElement("line", { class: "scope-tick" }));
+        const xTickLabels = Array.from({ length: 9 }, () => createSvgElement("text", { class: "scope-tick-label scope-tick-label-x" }));
+        const yTickLabels = Array.from({ length: 9 }, () => createSvgElement("text", { class: "scope-tick-label scope-tick-label-y" }));
         xTicks.forEach((tick) => axesGroup.appendChild(tick));
         yTicks.forEach((tick) => axesGroup.appendChild(tick));
+        xTickLabels.forEach((label) => axesGroup.appendChild(label));
+        yTickLabels.forEach((label) => axesGroup.appendChild(label));
         group.appendChild(axesGroup);
         const pathsGroup = createSvgElement("g", { class: "scope-paths", "clip-path": `url(#${clipId})` });
         group.appendChild(pathsGroup);
@@ -129,7 +137,7 @@ export const createSinkTemplates = (helpers) => {
         pathsGroup.appendChild(path);
         block.scopePaths = [path];
         block.scopePlot = plot;
-        block.scopeAxes = { xAxis, yAxis, xTicks, yTicks };
+        block.scopeAxes = { xAxis, yAxis, xTicks, yTicks, xTickLabels, yTickLabels };
         block.scopeClipRect = clipRect;
         block.scopeInputHints = [];
       },

@@ -5,6 +5,7 @@ export const createInspector = ({
   renderScope,
   signalDiagramChanged,
   onOpenSubsystem,
+  getRuntimeSeconds,
 }) => {
   const parseList = (value) =>
     value
@@ -80,6 +81,31 @@ export const createInspector = ({
         });
       }
     });
+  };
+
+  const asDisplayValue = (rawValue, fallbackValue) => {
+    const rawText = rawValue == null ? "" : String(rawValue);
+    if (rawText.trim()) return rawText;
+    if (fallbackValue == null) return "";
+    if (typeof fallbackValue === "number") {
+      return Number.isFinite(fallbackValue) ? String(fallbackValue) : "";
+    }
+    const fallbackText = String(fallbackValue);
+    return fallbackText.trim();
+  };
+
+  const formatSignificant = (value, digits = 2) => {
+    if (typeof value !== "number" || !Number.isFinite(value)) return "";
+    if (value === 0) return "0";
+    return Number(value.toPrecision(digits)).toString();
+  };
+
+  const asDisplayValueWithFormatter = (rawValue, fallbackValue, formatter) => {
+    const rawText = rawValue == null ? "" : String(rawValue);
+    if (rawText.trim()) return rawText;
+    if (fallbackValue == null) return "";
+    if (typeof formatter === "function") return formatter(fallbackValue);
+    return asDisplayValue(rawValue, fallbackValue);
   };
 
   const renderInspector = (block) => {
@@ -194,18 +220,20 @@ export const createInspector = ({
         renderer.updateBlockLabel(block);
       });
     } else if (block.type === "scope") {
+      const limits = block.computedLimits || {};
+      const runtime = typeof getRuntimeSeconds === "function" ? getRuntimeSeconds() : null;
       inspectorBody.innerHTML = `
         <label class="param">t min
-          <input type="text" data-edit="tMin" value="${block.params.tMin ?? ""}">
+          <input type="text" data-edit="tMin" value="${asDisplayValue(block.params.tMin, limits.tMin ?? 0)}">
         </label>
         <label class="param">t max
-          <input type="text" data-edit="tMax" value="${block.params.tMax ?? ""}">
+          <input type="text" data-edit="tMax" value="${asDisplayValue(block.params.tMax, limits.tMax ?? runtime ?? 1)}">
         </label>
         <label class="param">y min
-          <input type="text" data-edit="yMin" value="${block.params.yMin ?? ""}">
+          <input type="text" data-edit="yMin" value="${asDisplayValueWithFormatter(block.params.yMin, limits.yMin ?? -1.2, (v) => formatSignificant(Number(v), 2))}">
         </label>
         <label class="param">y max
-          <input type="text" data-edit="yMax" value="${block.params.yMax ?? ""}">
+          <input type="text" data-edit="yMax" value="${asDisplayValueWithFormatter(block.params.yMax, limits.yMax ?? 1.2, (v) => formatSignificant(Number(v), 2))}">
         </label>
         <label class="param">Width
           <input type="number" data-edit="width" value="${block.params.width ?? block.width}" min="160" step="10">
@@ -213,6 +241,7 @@ export const createInspector = ({
         <label class="param">Height
           <input type="number" data-edit="height" value="${block.params.height ?? block.height}" min="120" step="10">
         </label>
+        <label class="param"><input type="checkbox" data-edit="showTickLabels" ${block.params.showTickLabels === true ? "checked" : ""}> Show tick labels</label>
       `;
       ["tMin", "tMax", "yMin", "yMax"].forEach((key) => {
         const input = inspectorBody.querySelector(`input[data-edit='${key}']`);
@@ -232,19 +261,27 @@ export const createInspector = ({
           input.value = key === "width" ? block.width : block.height;
         });
       });
+      const showTickLabelsInput = inspectorBody.querySelector("input[data-edit='showTickLabels']");
+      if (showTickLabelsInput) {
+        showTickLabelsInput.addEventListener("change", () => {
+          block.params.showTickLabels = showTickLabelsInput.checked;
+          renderScope(block);
+        });
+      }
     } else if (block.type === "xyScope") {
+      const limits = block.computedLimits || {};
       inspectorBody.innerHTML = `
         <label class="param">x min
-          <input type="text" data-edit="xMin" value="${block.params.xMin ?? ""}">
+          <input type="text" data-edit="xMin" value="${asDisplayValue(block.params.xMin, limits.xMin ?? -1.2)}">
         </label>
         <label class="param">x max
-          <input type="text" data-edit="xMax" value="${block.params.xMax ?? ""}">
+          <input type="text" data-edit="xMax" value="${asDisplayValue(block.params.xMax, limits.xMax ?? 1.2)}">
         </label>
         <label class="param">y min
-          <input type="text" data-edit="yMin" value="${block.params.yMin ?? ""}">
+          <input type="text" data-edit="yMin" value="${asDisplayValueWithFormatter(block.params.yMin, limits.yMin ?? -1.2, (v) => formatSignificant(Number(v), 2))}">
         </label>
         <label class="param">y max
-          <input type="text" data-edit="yMax" value="${block.params.yMax ?? ""}">
+          <input type="text" data-edit="yMax" value="${asDisplayValueWithFormatter(block.params.yMax, limits.yMax ?? 1.2, (v) => formatSignificant(Number(v), 2))}">
         </label>
         <label class="param">Width
           <input type="number" data-edit="width" value="${block.params.width ?? block.width}" min="160" step="10">
@@ -252,6 +289,7 @@ export const createInspector = ({
         <label class="param">Height
           <input type="number" data-edit="height" value="${block.params.height ?? block.height}" min="120" step="10">
         </label>
+        <label class="param"><input type="checkbox" data-edit="showTickLabels" ${block.params.showTickLabels === true ? "checked" : ""}> Show tick labels</label>
       `;
       ["xMin", "xMax", "yMin", "yMax"].forEach((key) => {
         const input = inspectorBody.querySelector(`input[data-edit='${key}']`);
@@ -271,6 +309,13 @@ export const createInspector = ({
           input.value = key === "width" ? block.width : block.height;
         });
       });
+      const showTickLabelsInput = inspectorBody.querySelector("input[data-edit='showTickLabels']");
+      if (showTickLabelsInput) {
+        showTickLabelsInput.addEventListener("change", () => {
+          block.params.showTickLabels = showTickLabelsInput.checked;
+          renderScope(block);
+        });
+      }
     } else if (block.type === "chirp") {
       inspectorBody.innerHTML = `
         <label class="param">Amplitude

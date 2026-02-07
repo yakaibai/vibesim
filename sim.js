@@ -2,6 +2,11 @@ import { simHandlers, resolveLabelSourcesOnce } from "./blocks/sim/index.js";
 import { buildTfModel, outputFromState, integrateTfRK4 } from "./blocks/sim/helpers.js";
 import { evalExpression } from "./utils/expr.js";
 
+function roundToSignificant(value, digits = 2) {
+  if (!Number.isFinite(value) || value === 0) return value;
+  return Number(value.toPrecision(digits));
+}
+
 export function simulate({ state, runtimeInput, statusEl, downloadFile }) {
   statusEl.textContent = "Running...";
   const blocks = Array.from(state.blocks.values());
@@ -193,6 +198,7 @@ export function renderScope(scopeBlock) {
   const plotW = Number(plot.getAttribute("width"));
   const plotH = Number(plot.getAttribute("height"));
   const axes = scopeBlock.scopeAxes;
+  const showTickLabels = scopeBlock.params?.showTickLabels === true;
   const parseLimit = (value) => {
     if (value == null) return null;
     if (typeof value === "number" && Number.isFinite(value)) return value;
@@ -223,18 +229,40 @@ export function renderScope(scopeBlock) {
     for (let v = start; v <= max + step * 0.5; v += step) ticks.push(v);
     return ticks;
   };
+  const formatTick = (value) => {
+    if (!Number.isFinite(value)) return "";
+    if (value === 0) return "0";
+    const abs = Math.abs(value);
+    if (abs >= 10000 || abs < 1e-3) return value.toExponential(1).replace("+", "");
+    return Number(value.toPrecision(3)).toString();
+  };
   const { time, series, connected } = scopeBlock.scopeData;
+  const t0Raw = Number(time[0] ?? 0);
+  const t1Raw = Number(time[time.length - 1] ?? t0Raw);
+  const tMinParam = parseLimit(scopeBlock.params?.tMin);
+  const tMaxParam = parseLimit(scopeBlock.params?.tMax);
+  const yMinParam = parseLimit(scopeBlock.params?.yMin);
+  const yMaxParam = parseLimit(scopeBlock.params?.yMax);
+  const t0 = tMinParam != null ? tMinParam : t0Raw;
+  const t1 = tMaxParam != null ? tMaxParam : t1Raw;
+  const tRange = t1 - t0;
   const activeSeries = series.filter((_, idx) => (connected ? connected[idx] : true));
   const values = activeSeries.flat().filter((v) => v != null);
   if (values.length === 0) {
     scopeBlock.scopePaths.forEach((path) => path.setAttribute("d", ""));
+    if (axes?.xTickLabels) axes.xTickLabels.forEach((label) => label.setAttribute("display", "none"));
+    if (axes?.yTickLabels) axes.yTickLabels.forEach((label) => label.setAttribute("display", "none"));
+    scopeBlock.computedLimits = {
+      tMin: t0,
+      tMax: t1,
+      yMin: yMinParam != null ? yMinParam : -1.2,
+      yMax: yMaxParam != null ? yMaxParam : 1.2,
+    };
     return;
   }
 
   let maxVal = Math.max(...values, 1);
   let minVal = Math.min(...values, -1);
-  const yMinParam = parseLimit(scopeBlock.params?.yMin);
-  const yMaxParam = parseLimit(scopeBlock.params?.yMax);
   if (yMinParam != null) minVal = yMinParam;
   if (yMaxParam != null) maxVal = yMaxParam;
   if (maxVal === minVal) {
@@ -243,8 +271,8 @@ export function renderScope(scopeBlock) {
   }
   if (yMinParam == null && yMaxParam == null) {
     const maxAbs = Math.max(Math.abs(maxVal), Math.abs(minVal), 1e-6);
-    maxVal = maxAbs * 1.2;
-    minVal = -maxAbs * 1.2;
+    maxVal = roundToSignificant(maxAbs * 1.2, 2);
+    minVal = roundToSignificant(-maxAbs * 1.2, 2);
   }
   const range = maxVal - minVal;
 
@@ -265,6 +293,7 @@ export function renderScope(scopeBlock) {
     axes.yTicks.forEach((tick, idx) => {
       if (idx >= yTicks.length) {
         tick.setAttribute("display", "none");
+        axes.yTickLabels?.[idx]?.setAttribute("display", "none");
         return;
       }
       tick.setAttribute("display", "block");
@@ -274,19 +303,24 @@ export function renderScope(scopeBlock) {
       tick.setAttribute("y1", y);
       tick.setAttribute("x2", plotX + tickLen);
       tick.setAttribute("y2", y);
+      const label = axes.yTickLabels?.[idx];
+      if (label) {
+        if (showTickLabels) {
+          label.setAttribute("display", "block");
+          label.setAttribute("x", plotX + 8);
+          label.setAttribute("y", y - 2);
+          label.textContent = formatTick(v);
+        } else {
+          label.setAttribute("display", "none");
+        }
+      }
     });
-    const t0Raw = Number(time[0] ?? 0);
-    const t1Raw = Number(time[time.length - 1] ?? t0Raw);
-    const tMinParam = parseLimit(scopeBlock.params?.tMin);
-    const tMaxParam = parseLimit(scopeBlock.params?.tMax);
-    const t0 = tMinParam != null ? tMinParam : t0Raw;
-    const t1 = tMaxParam != null ? tMaxParam : t1Raw;
-    const tRange = t1 - t0;
     const xStep = niceStep(Math.max(1e-6, tRange), 5);
     const xTicks = tRange <= 0 ? [t0] : buildTicks(t0, t1, xStep);
     axes.xTicks.forEach((tick, idx) => {
       if (idx >= xTicks.length) {
         tick.setAttribute("display", "none");
+        axes.xTickLabels?.[idx]?.setAttribute("display", "none");
         return;
       }
       tick.setAttribute("display", "block");
@@ -297,6 +331,17 @@ export function renderScope(scopeBlock) {
       tick.setAttribute("y1", xAxisY - tickLen);
       tick.setAttribute("x2", x);
       tick.setAttribute("y2", xAxisY + tickLen);
+      const label = axes.xTickLabels?.[idx];
+      if (label) {
+        if (showTickLabels) {
+          label.setAttribute("display", "block");
+          label.setAttribute("x", x + 2);
+          label.setAttribute("y", xAxisY - 6);
+          label.textContent = formatTick(v);
+        } else {
+          label.setAttribute("display", "none");
+        }
+      }
     });
   }
 
@@ -309,13 +354,6 @@ export function renderScope(scopeBlock) {
     const path = valuesForSeries
       .map((v, i) => {
         if (v == null) return null;
-        const t0Raw = Number(time[0] ?? 0);
-        const t1Raw = Number(time[time.length - 1] ?? t0Raw);
-        const tMinParam = parseLimit(scopeBlock.params?.tMin);
-        const tMaxParam = parseLimit(scopeBlock.params?.tMax);
-        const t0 = tMinParam != null ? tMinParam : t0Raw;
-        const t1 = tMaxParam != null ? tMaxParam : t1Raw;
-        const tRange = t1 - t0;
         const t = Number(time[i] ?? t0);
         const ratio = tRange <= 0 ? (valuesForSeries.length <= 1 ? 0 : i / (valuesForSeries.length - 1)) : (t - t0) / tRange;
         const clamped = Math.max(0, Math.min(1, ratio));
@@ -328,6 +366,13 @@ export function renderScope(scopeBlock) {
     if (pathEl) pathEl.setAttribute("d", path.join(" "));
   });
 
+  scopeBlock.computedLimits = {
+    tMin: t0,
+    tMax: t1,
+    yMin: minVal,
+    yMax: maxVal,
+  };
+
   if (scopeBlock.scopeHoverX == null) return;
   const clampedX = Math.min(plotX + plotW, Math.max(plotX, scopeBlock.scopeHoverX));
   const ratio = (clampedX - plotX) / Math.max(1, plotW);
@@ -335,13 +380,6 @@ export function renderScope(scopeBlock) {
   const primary = primaryIndex >= 0 ? series[primaryIndex] : series[0] || [];
   if (primary.length < 2) return;
   const idx = Math.min(primary.length - 1, Math.max(0, Math.round(ratio * (primary.length - 1))));
-  const t0Raw = Number(time[0] ?? 0);
-  const t1Raw = Number(time[time.length - 1] ?? t0Raw);
-  const tMinParam = parseLimit(scopeBlock.params?.tMin);
-  const tMaxParam = parseLimit(scopeBlock.params?.tMax);
-  const t0 = tMinParam != null ? tMinParam : t0Raw;
-  const t1 = tMaxParam != null ? tMaxParam : t1Raw;
-  const tRange = t1 - t0;
   const t = tRange <= 0 ? Number(time[idx] ?? t0) : t0 + ratio * tRange;
   const x = plotX + ratio * plotW;
   const timeLabel = formatTime(t, t0, t1);
@@ -385,6 +423,8 @@ export function renderXYScope(scopeBlock) {
   const { connected } = scopeBlock.xyScopeData;
   if (connected && (!connected[0] || !connected[1])) {
     scopeBlock.scopePaths.forEach((path) => path.setAttribute("d", ""));
+    if (scopeBlock.scopeAxes?.xTickLabels) scopeBlock.scopeAxes.xTickLabels.forEach((label) => label.setAttribute("display", "none"));
+    if (scopeBlock.scopeAxes?.yTickLabels) scopeBlock.scopeAxes.yTickLabels.forEach((label) => label.setAttribute("display", "none"));
     return;
   }
   const plot = scopeBlock.scopePlot;
@@ -393,6 +433,7 @@ export function renderXYScope(scopeBlock) {
   const plotW = Number(plot.getAttribute("width"));
   const plotH = Number(plot.getAttribute("height"));
   const axes = scopeBlock.scopeAxes;
+  const showTickLabels = scopeBlock.params?.showTickLabels === true;
   const parseLimit = (value) => {
     if (value == null) return null;
     if (typeof value === "number" && Number.isFinite(value)) return value;
@@ -423,22 +464,37 @@ export function renderXYScope(scopeBlock) {
     for (let v = start; v <= max + step * 0.5; v += step) ticks.push(v);
     return ticks;
   };
+  const formatTick = (value) => {
+    if (!Number.isFinite(value)) return "";
+    if (value === 0) return "0";
+    const abs = Math.abs(value);
+    if (abs >= 10000 || abs < 1e-3) return value.toExponential(1).replace("+", "");
+    return Number(value.toPrecision(3)).toString();
+  };
   const { series } = scopeBlock.xyScopeData;
   const xSeries = series.x || [];
   const ySeries = series.y || [];
+  const xMinParam = parseLimit(scopeBlock.params?.xMin);
+  const xMaxParam = parseLimit(scopeBlock.params?.xMax);
+  const yMinParam = parseLimit(scopeBlock.params?.yMin);
+  const yMaxParam = parseLimit(scopeBlock.params?.yMax);
   const pairs = xSeries.map((x, idx) => ({ x, y: ySeries[idx] })).filter((p) => p.x != null && p.y != null);
   if (pairs.length === 0) {
     scopeBlock.scopePaths.forEach((path) => path.setAttribute("d", ""));
+    if (axes?.xTickLabels) axes.xTickLabels.forEach((label) => label.setAttribute("display", "none"));
+    if (axes?.yTickLabels) axes.yTickLabels.forEach((label) => label.setAttribute("display", "none"));
+    scopeBlock.computedLimits = {
+      xMin: xMinParam != null ? xMinParam : -1.2,
+      xMax: xMaxParam != null ? xMaxParam : 1.2,
+      yMin: yMinParam != null ? yMinParam : -1.2,
+      yMax: yMaxParam != null ? yMaxParam : 1.2,
+    };
     return;
   }
   let xMin = Math.min(...pairs.map((p) => p.x));
   let xMax = Math.max(...pairs.map((p) => p.x));
   let yMin = Math.min(...pairs.map((p) => p.y));
   let yMax = Math.max(...pairs.map((p) => p.y));
-  const xMinParam = parseLimit(scopeBlock.params?.xMin);
-  const xMaxParam = parseLimit(scopeBlock.params?.xMax);
-  const yMinParam = parseLimit(scopeBlock.params?.yMin);
-  const yMaxParam = parseLimit(scopeBlock.params?.yMax);
   if (xMinParam != null) xMin = xMinParam;
   if (xMaxParam != null) xMax = xMaxParam;
   if (yMinParam != null) yMin = yMinParam;
@@ -458,8 +514,8 @@ export function renderXYScope(scopeBlock) {
   }
   if (yMinParam == null && yMaxParam == null) {
     const maxAbs = Math.max(Math.abs(yMax), Math.abs(yMin), 1e-6);
-    yMax = maxAbs * 1.2;
-    yMin = -maxAbs * 1.2;
+    yMax = roundToSignificant(maxAbs * 1.2, 2);
+    yMin = roundToSignificant(-maxAbs * 1.2, 2);
   }
   const xRange = xMax - xMin;
   const yRange = yMax - yMin;
@@ -484,6 +540,7 @@ export function renderXYScope(scopeBlock) {
     axes.xTicks.forEach((tick, idx) => {
       if (idx >= xTicks.length) {
         tick.setAttribute("display", "none");
+        axes.xTickLabels?.[idx]?.setAttribute("display", "none");
         return;
       }
       tick.setAttribute("display", "block");
@@ -493,10 +550,22 @@ export function renderXYScope(scopeBlock) {
       tick.setAttribute("y1", xAxisY - tickLen);
       tick.setAttribute("x2", x);
       tick.setAttribute("y2", xAxisY + tickLen);
+      const label = axes.xTickLabels?.[idx];
+      if (label) {
+        if (showTickLabels) {
+          label.setAttribute("display", "block");
+          label.setAttribute("x", x + 2);
+          label.setAttribute("y", xAxisY - 6);
+          label.textContent = formatTick(v);
+        } else {
+          label.setAttribute("display", "none");
+        }
+      }
     });
     axes.yTicks.forEach((tick, idx) => {
       if (idx >= yTicks.length) {
         tick.setAttribute("display", "none");
+        axes.yTickLabels?.[idx]?.setAttribute("display", "none");
         return;
       }
       tick.setAttribute("display", "block");
@@ -506,6 +575,17 @@ export function renderXYScope(scopeBlock) {
       tick.setAttribute("y1", y);
       tick.setAttribute("x2", yAxisX + tickLen);
       tick.setAttribute("y2", y);
+      const label = axes.yTickLabels?.[idx];
+      if (label) {
+        if (showTickLabels) {
+          label.setAttribute("display", "block");
+          label.setAttribute("x", yAxisX + 8);
+          label.setAttribute("y", y - 2);
+          label.textContent = formatTick(v);
+        } else {
+          label.setAttribute("display", "none");
+        }
+      }
     });
   }
   const path = pairs
@@ -517,6 +597,12 @@ export function renderXYScope(scopeBlock) {
     .join(" ");
   const pathEl = scopeBlock.scopePaths[0];
   if (pathEl) pathEl.setAttribute("d", path);
+  scopeBlock.computedLimits = {
+    xMin,
+    xMax,
+    yMin,
+    yMax,
+  };
 }
 
 export const __testOnly = {

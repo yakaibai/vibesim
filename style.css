@@ -1035,11 +1035,11 @@ body.is-root-diagram #subsystemUpBtn {
 }
 
 .switch-math--m .katex {
-  font-size: 0.34em;
+  font-size: 0.28em;
 }
 
 .switch-math--s .katex {
-  font-size: 0.30em;
+  font-size: 0.24em;
 }
 
 .subsystem-port-label {
@@ -1102,6 +1102,13 @@ body.is-root-diagram #subsystemUpBtn {
 .scope-tick {
   stroke: #b7b7b7;
   stroke-width: 1.2;
+}
+
+.scope-tick-label {
+  fill: #b7b7b7;
+  font-size: 9px;
+  font-weight: 500;
+  pointer-events: none;
 }
 
 .scope-path {

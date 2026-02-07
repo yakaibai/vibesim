@@ -3493,6 +3493,36 @@ export function createRenderer({
   }
 
   function updateParamDisplay(block) {
+    const getScopeFallbackValue = (key) => {
+      const limits = block.computedLimits || {};
+      if (block.type === "scope") {
+        if (key === "tMin") return limits.tMin ?? 0;
+        if (key === "tMax") {
+          const runtimeEl = typeof document !== "undefined" ? document.getElementById("runtimeInput") : null;
+          const runtimeValue = Number(runtimeEl?.value);
+          return limits.tMax ?? (Number.isFinite(runtimeValue) ? runtimeValue : 1);
+        }
+        if (key === "yMin") return limits.yMin ?? -1.2;
+        if (key === "yMax") return limits.yMax ?? 1.2;
+      }
+      if (block.type === "xyScope") {
+        if (key === "xMin") return limits.xMin ?? -1.2;
+        if (key === "xMax") return limits.xMax ?? 1.2;
+        if (key === "yMin") return limits.yMin ?? -1.2;
+        if (key === "yMax") return limits.yMax ?? 1.2;
+      }
+      return null;
+    };
+
+    const getDisplayValue = (key) => {
+      const raw = block.params?.[key];
+      if (raw != null && String(raw).trim() !== "") return String(raw);
+      const fallback = getScopeFallbackValue(key);
+      if (fallback == null) return "";
+      if (typeof fallback === "number" && Number.isFinite(fallback)) return String(fallback);
+      return String(fallback);
+    };
+
     const textEl = block.paramDisplay;
     if (!textEl) return;
     const visible = block.params?._visible;
@@ -3512,8 +3542,7 @@ export function createRenderer({
     const baseY = block.height + 14;
     entries.forEach(([key], index) => {
       const label = (block.paramLabels && block.paramLabels[key]) || key;
-      const value = block.params?.[key];
-      const valueText = value == null ? "" : String(value);
+      const valueText = getDisplayValue(key);
       const line = `${label}: ${valueText}`;
       const tspan = createSvgElement("tspan", {
         x: baseX,

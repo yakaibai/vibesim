@@ -458,6 +458,10 @@ renderInspector = createInspector({
   renderScope,
   signalDiagramChanged,
   onOpenSubsystem: (block) => openSubsystemFromBlock(block),
+  getRuntimeSeconds: () => {
+    const value = Number(runtimeInput?.value);
+    return Number.isFinite(value) ? value : null;
+  },
 }).renderInspector;
 
 if (inspectorBody) {
@@ -1333,14 +1337,28 @@ function init() {
   }
 
   const handleRun = () => simulate({ state, runtimeInput, statusEl, downloadFile });
+  const refreshSelectedScopeInspector = () => {
+    const selected = state.selectedId ? state.blocks.get(state.selectedId) : null;
+    if (!selected || (selected.type !== "scope" && selected.type !== "xyScope")) return;
+    renderScope(selected);
+    renderInspector(selected);
+  };
   if (simDt) {
     const updateSimDt = () => {
       const value = Number(simDt.value);
       state.sampleTime = Number.isFinite(value) && value > 0 ? value : 0.01;
+      refreshSelectedScopeInspector();
     };
     updateSimDt();
     simDt.addEventListener("input", updateSimDt);
     simDt.addEventListener("change", updateSimDt);
+  }
+  if (runtimeInput) {
+    const updateRuntimeInspector = () => {
+      refreshSelectedScopeInspector();
+    };
+    runtimeInput.addEventListener("input", updateRuntimeInspector);
+    runtimeInput.addEventListener("change", updateRuntimeInspector);
   }
   if (runButtons.length) {
     runButtons.forEach((button) => button.addEventListener("click", handleRun));
