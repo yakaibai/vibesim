@@ -19,7 +19,7 @@ const DEBUG_WIRE_CHECKS = false;
 const SELECTION_PAD = 10;
 const HOP_RADIUS = 4;
 const USERFUNC_MIN_WIDTH = 120;
-const USERFUNC_MIN_HEIGHT = 80;
+const USERFUNC_FIXED_HEIGHT = 80;
 const USERFUNC_PADDING_X = 12;
 const USERFUNC_PADDING_Y = 16;
 const USERFUNC_SETTLE_RETRIES = 4;
@@ -2665,7 +2665,7 @@ export function createRenderer({
     const estimateWidth = estimateLatexWidth(latex);
     const rawEstimate = USERFUNC_MIN_WIDTH;
     let width = rawEstimate;
-    let height = USERFUNC_MIN_HEIGHT;
+    let height = USERFUNC_FIXED_HEIGHT;
     const measuredTex = measureUserFuncTex(`\\scriptsize{${latex}}`);
     const hasMeasuredTex = Boolean(measuredTex && Number.isFinite(measuredTex.w) && Number.isFinite(measuredTex.h));
     if (!hasMeasuredTex) {
@@ -2676,7 +2676,8 @@ export function createRenderer({
       const scaledW = pxToSvg(measuredTex.w, "x", scale);
       const scaledH = pxToSvg(measuredTex.h, "y", scale);
       width = Math.max(width, Math.ceil(scaledW + USERFUNC_PADDING_X * 2));
-      height = Math.max(height, Math.ceil(scaledH + USERFUNC_PADDING_Y * 2));
+      // Keep user-defined block height fixed; only width adapts to expression size.
+      height = USERFUNC_FIXED_HEIGHT;
     }
     if (mathGroup) {
       for (let pass = 0; pass < 2; pass += 1) {
@@ -2684,11 +2685,10 @@ export function createRenderer({
         const size = getMathSpanSize(mathGroup);
         if (!size) continue;
         const neededW = Math.ceil(size.w + USERFUNC_PADDING_X * 2);
-        const neededH = Math.ceil(size.h + USERFUNC_PADDING_Y * 2);
-        const needsResize = neededW > width || neededH > height;
+        const needsResize = neededW > width;
         if (!needsResize && !force) break;
         width = Math.max(width, neededW);
-        height = Math.max(height, neededH);
+        height = USERFUNC_FIXED_HEIGHT;
       }
     }
     return {
@@ -2710,7 +2710,7 @@ export function createRenderer({
     if (!size) return null;
     return {
       width: Math.max(USERFUNC_MIN_WIDTH, Math.ceil(size.w + USERFUNC_PADDING_X * 2)),
-      height: Math.max(USERFUNC_MIN_HEIGHT, Math.ceil(size.h + USERFUNC_PADDING_Y * 2)),
+      height: USERFUNC_FIXED_HEIGHT,
     };
   }
 
@@ -2840,11 +2840,11 @@ export function createRenderer({
       const mathGroup = block.group?.querySelector?.(".userfunc-math");
       const renderedSize = computeRenderedUserFuncSize(mathGroup);
       if (!renderedSize) return;
-      if (renderedSize.width > block.width || renderedSize.height > block.height) {
+      if (renderedSize.width > block.width) {
         applyUserFuncSize(
           block,
           Math.max(block.width, renderedSize.width),
-          Math.max(block.height, renderedSize.height),
+          USERFUNC_FIXED_HEIGHT,
           { force: true }
         );
         scheduleUserFuncFit(block);
