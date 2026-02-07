@@ -31,6 +31,7 @@ const marginOutputText = document.getElementById("marginOutputText");
 const marginLoopSelect = document.getElementById("marginLoopSelect");
 const statusEl = document.getElementById("status");
 const runtimeInput = document.getElementById("runtimeInput");
+const autoRouteInput = document.getElementById("autoRouteInput");
 const inspectorBody = document.getElementById("inspectorBody");
 const deleteSelectionBtn = document.getElementById("deleteSelection");
 const examplesList = document.getElementById("examplesList");
@@ -139,6 +140,8 @@ const state = {
   diagramName: "vibesim",
   selectedLoopKey: null,
   sampleTime: 0.01,
+  autoRoute: true,
+  loadingDiagram: false,
   loadedSubsystems: new Map(),
   subsystemStack: [],
 };
@@ -570,6 +573,21 @@ function sanitizeFilename(name) {
   return base.replace(/[^a-zA-Z0-9_-]+/g, "_");
 }
 
+function sanitizeParamsForSave(params) {
+  if (!params || typeof params !== "object") return params || {};
+  const cleaned = { ...params };
+  if (cleaned._visible && typeof cleaned._visible === "object") {
+    const visible = {};
+    Object.entries(cleaned._visible).forEach(([key, value]) => {
+      if (key === "{}") return;
+      if (!value) return;
+      visible[key] = true;
+    });
+    cleaned._visible = visible;
+  }
+  return cleaned;
+}
+
 function serializeDiagram(state) {
   const blocks = Array.from(state.blocks.values()).map((block) => ({
     id: block.id,
@@ -577,14 +595,22 @@ function serializeDiagram(state) {
     x: Math.round(block.x),
     y: Math.round(block.y),
     rotation: block.rotation || 0,
-    params: block.params || {},
+    params: sanitizeParamsForSave(block.params || {}),
   }));
-  const connections = state.connections.map((conn) => ({
-    from: conn.from,
-    to: conn.to,
-    fromIndex: conn.fromIndex ?? 0,
-    toIndex: conn.toIndex ?? 0,
-  }));
+  const connections = state.connections.map((conn) => {
+    const base = {
+      from: conn.from,
+      to: conn.to,
+      fromIndex: conn.fromIndex ?? 0,
+      toIndex: conn.toIndex ?? 0,
+    };
+    if (!Array.isArray(conn.points) || conn.points.length < 2) return base;
+    const points = conn.points
+      .map((pt) => [Number(pt?.x), Number(pt?.y)])
+      .filter(([x, y]) => Number.isFinite(x) && Number.isFinite(y));
+    if (points.length < 2) return base;
+    return { ...base, points };
+  });
   return {
     version: 1,
     name: state.diagramName || "vibesim",
@@ -593,6 +619,7 @@ function serializeDiagram(state) {
     variables: state.variablesText || "",
     sampleTime: Number(state.sampleTime) || 0.01,
     runtime: Number(runtimeInput?.value) || 0,
+    autoRoute: state.autoRoute !== false,
   };
 }
 
@@ -614,6 +641,8 @@ function loadDiagram(data, options = {}) {
     const value = Number(simDt.value);
     state.sampleTime = Number.isFinite(value) && value > 0 ? value : 0.01;
   }
+  state.autoRoute = data.autoRoute !== false;
+  if (autoRouteInput) autoRouteInput.checked = state.autoRoute;
   state.variablesText = typeof data.variables === "string" ? data.variables : "";
   const variablesInput = document.getElementById("variablesInput");
   const variablesPreview = document.getElementById("variablesPreview");
@@ -630,9 +659,54 @@ function loadDiagram(data, options = {}) {
     updateSubsystemNavUi();
   }
   renderer.clearWorkspace();
+  state.loadingDiagram = true;
   state.routingDirty = false;
   state.dirtyBlocks.clear();
   state.dirtyConnections.clear();
+
+  const pointQueuesByKey = new Map();
+  let hasConnectionsWithoutPoints = false;
+  const enqueuePoints = (key, points) => {
+    if (!Array.isArray(points) || points.length < 2) return;
+    const queue = pointQueuesByKey.get(key) || [];
+    queue.push(points);
+    pointQueuesByKey.set(key, queue);
+  };
+  const parsePoints = (rawPoints) => {
+    if (!Array.isArray(rawPoints)) return [];
+    const parsed = rawPoints
+      .map((pt) => {
+        if (Array.isArray(pt) && pt.length >= 2) {
+          return { x: Number(pt[0]), y: Number(pt[1]) };
+        }
+        return { x: Number(pt?.x), y: Number(pt?.y) };
+      })
+      .filter((pt) => Number.isFinite(pt.x) && Number.isFinite(pt.y));
+    return parsed.length >= 2 ? parsed : [];
+  };
+  if (Array.isArray(data.routing)) {
+    data.routing.forEach((entry) => {
+      if (!entry || typeof entry !== "object") return;
+      const key = `${entry.from}:${Number(entry.fromIndex ?? 0)}->${entry.to}:${Number(entry.toIndex ?? 0)}`;
+      const points = parsePoints(entry.points);
+      if (points.length >= 2) enqueuePoints(key, points);
+    });
+  }
+  connections.forEach((entry) => {
+    if (!entry || typeof entry !== "object") return;
+    const key = `${entry.from}:${Number(entry.fromIndex ?? 0)}->${entry.to}:${Number(entry.toIndex ?? 0)}`;
+    const points = parsePoints(entry.points);
+    if (points.length >= 2) enqueuePoints(key, points);
+    else hasConnectionsWithoutPoints = true;
+  });
+  const takePointsForKey = (key) => {
+    const queue = pointQueuesByKey.get(key);
+    if (!queue || !queue.length) return null;
+    const points = queue.shift();
+    if (!queue.length) pointQueuesByKey.delete(key);
+    return points;
+  };
+  let loadedPointCount = 0;
 
   blocks.forEach((block) => {
     if (!block || !block.type) return;
@@ -648,7 +722,16 @@ function loadDiagram(data, options = {}) {
   connections.forEach((conn) => {
     if (!conn) return;
     if (!state.blocks.has(conn.from) || !state.blocks.has(conn.to)) return;
+    const beforeLen = state.connections.length;
     renderer.createConnection(conn.from, conn.to, conn.toIndex ?? 0, conn.fromIndex ?? 0);
+    if (state.connections.length <= beforeLen) return;
+    const created = state.connections[state.connections.length - 1];
+    const key = connectionKey(created);
+    const points = takePointsForKey(key);
+    if (Array.isArray(points) && points.length >= 2) {
+      created.points = points.map((pt) => ({ x: pt.x, y: pt.y }));
+      loadedPointCount += 1;
+    }
   });
 
   if (restoreUiState?.routePoints && typeof restoreUiState.routePoints === "object") {
@@ -676,6 +759,7 @@ function loadDiagram(data, options = {}) {
     });
   }
 
+  state.loadingDiagram = false;
   fitToDiagram();
   if (restoreUiState?.routePoints) {
     state.fastRouting = false;
@@ -684,28 +768,66 @@ function loadDiagram(data, options = {}) {
     if (state.dirtyConnections) state.dirtyConnections.clear();
     if (renderer.renderCurrentWirePaths) renderer.renderCurrentWirePaths();
     if (typeof updateStabilityPanel === "function") updateStabilityPanel();
+  } else if (loadedPointCount > 0) {
+    state.fastRouting = false;
+    state.routingDirty = false;
+    if (state.dirtyBlocks) state.dirtyBlocks.clear();
+    if (state.dirtyConnections) state.dirtyConnections.clear();
+    if (renderer.renderCurrentWirePaths) renderer.renderCurrentWirePaths();
+    const shouldAutoRoute = state.autoRoute || hasConnectionsWithoutPoints;
+    if (shouldAutoRoute) {
+      requestAnimationFrame(() => {
+        setTimeout(() => {
+          renderer.forceFullRoute(FORCE_FULL_ROUTE_TIME_LIMIT_MS);
+          if (typeof updateStabilityPanel === "function") updateStabilityPanel();
+        }, 0);
+      });
+    } else if (typeof updateStabilityPanel === "function") {
+      updateStabilityPanel();
+    }
   } else {
-    // Show blocks and simple wires immediately, then do the expensive route.
-    state.fastRouting = true;
-    state.routingDirty = true;
-    state.dirtyConnections = new Set(state.connections);
-    renderer.updateConnections(true);
-    requestAnimationFrame(() => {
-      setTimeout(() => {
-        state.fastRouting = false;
-        renderer.forceFullRoute(FORCE_FULL_ROUTE_TIME_LIMIT_MS);
-        if (typeof updateStabilityPanel === "function") updateStabilityPanel();
-      }, 0);
-    });
+    if (state.autoRoute) {
+      // Show blocks and simple wires immediately, then do the expensive route.
+      state.fastRouting = true;
+      state.routingDirty = true;
+      state.dirtyConnections = new Set(state.connections);
+      renderer.updateConnections(true);
+      requestAnimationFrame(() => {
+        setTimeout(() => {
+          state.fastRouting = false;
+          renderer.forceFullRoute(FORCE_FULL_ROUTE_TIME_LIMIT_MS);
+          if (typeof updateStabilityPanel === "function") updateStabilityPanel();
+        }, 0);
+      });
+    } else {
+      state.fastRouting = false;
+      state.routingDirty = false;
+      if (state.dirtyBlocks) state.dirtyBlocks.clear();
+      if (state.dirtyConnections) state.dirtyConnections.clear();
+      if (renderer.renderCurrentWirePaths) renderer.renderCurrentWirePaths();
+      if (typeof updateStabilityPanel === "function") updateStabilityPanel();
+    }
   }
 }
 
 function toYAML(data) {
   const lines = [];
+  const isPointPairArray = (value) =>
+    Array.isArray(value)
+    && value.length > 0
+    && value.every((item) =>
+      Array.isArray(item)
+      && item.length >= 2
+      && Number.isFinite(Number(item[0]))
+      && Number.isFinite(Number(item[1])));
   const write = (value, indent) => {
     if (Array.isArray(value)) {
       if (value.length === 0) {
         lines.push(`${" ".repeat(indent)}[]`);
+        return;
+      }
+      if (isPointPairArray(value)) {
+        lines.push(`${" ".repeat(indent)}${JSON.stringify(value)}`);
         return;
       }
       value.forEach((item) => {
@@ -727,6 +849,10 @@ function toYAML(data) {
       entries.forEach(([key, val]) => {
         if (Array.isArray(val) && val.length === 0) {
           lines.push(`${" ".repeat(indent)}${key}: []`);
+          return;
+        }
+        if (isPointPairArray(val)) {
+          lines.push(`${" ".repeat(indent)}${key}: ${JSON.stringify(val)}`);
           return;
         }
         if (typeof val === "object" && val !== null) {
@@ -771,6 +897,13 @@ function parseYAML(text) {
     if (raw === "false") return false;
     if (raw === "[]") return [];
     if (raw === "{}") return {};
+    if ((raw.startsWith("[") && raw.endsWith("]")) || (raw.startsWith("{") && raw.endsWith("}"))) {
+      try {
+        return JSON.parse(raw);
+      } catch {
+        // fall through and treat as plain text if this is not valid JSON
+      }
+    }
     if (/^-?\d+(\.\d+)?$/.test(raw)) return Number(raw);
     if ((raw.startsWith('"') && raw.endsWith('"')) || (raw.startsWith("'") && raw.endsWith("'"))) {
       try {
@@ -853,9 +986,17 @@ function parseYAML(text) {
     while (index < lines.length) {
       const line = lines[index];
       if (line.indent < indentLevel || line.text.startsWith("- ") || line.text === "-") break;
+      if (!line.text.includes(":")) {
+        index += 1;
+        continue;
+      }
       const [rawKey, ...rest] = line.text.split(":");
       const key = rawKey.trim();
       const valueRaw = rest.join(":").trim();
+      if (!key || key === "{}") {
+        index += 1;
+        continue;
+      }
       if (!valueRaw) {
         index += 1;
         const next = nextNonEmpty(index);
@@ -1359,6 +1500,20 @@ function init() {
     };
     runtimeInput.addEventListener("input", updateRuntimeInspector);
     runtimeInput.addEventListener("change", updateRuntimeInspector);
+  }
+  if (autoRouteInput) {
+    autoRouteInput.checked = state.autoRoute !== false;
+    const updateAutoRoute = () => {
+      state.autoRoute = autoRouteInput.checked;
+      if (state.autoRoute) {
+        state.fastRouting = false;
+        state.routingDirty = true;
+        renderer.forceFullRoute(FORCE_FULL_ROUTE_TIME_LIMIT_MS);
+      } else {
+        renderer.updateConnections(true);
+      }
+    };
+    autoRouteInput.addEventListener("change", updateAutoRoute);
   }
   if (runButtons.length) {
     runButtons.forEach((button) => button.addEventListener("click", handleRun));

@@ -977,6 +977,13 @@ body.is-root-diagram #subsystemUpBtn {
   pointer-events: stroke;
 }
 
+.wire-corner-handle {
+  fill: #ffffff;
+  stroke: var(--accent-2);
+  stroke-width: 2;
+  cursor: move;
+}
+
 .wire.selected {
   stroke: var(--accent-3);
   stroke-width: 2;

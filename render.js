@@ -18,6 +18,7 @@ export const FORCE_FULL_ROUTE_TIME_LIMIT_MS = 4000;
 const DEBUG_WIRE_CHECKS = false;
 const SELECTION_PAD = 10;
 const HOP_RADIUS = 4;
+const WIRE_CORNER_HANDLE_RADIUS = 6;
 const USERFUNC_MIN_WIDTH = 120;
 const USERFUNC_FIXED_HEIGHT = 80;
 const USERFUNC_PADDING_X = 12;
@@ -903,6 +904,81 @@ export function createRenderer({
     display: "none",
   });
   overlayLayer.appendChild(marqueeRect);
+  const wireCornerLayer = createSvgElement("g", { class: "wire-corner-layer" });
+  overlayLayer.appendChild(wireCornerLayer);
+  const wireCornerDrag = {
+    active: false,
+    conn: null,
+    index: -1,
+    pointerId: null,
+  };
+
+  function clearWireCornerHandles() {
+    while (wireCornerLayer.firstChild) wireCornerLayer.removeChild(wireCornerLayer.firstChild);
+  }
+
+  function moveWireCorner(conn, index, target) {
+    if (!conn || !Array.isArray(conn.points) || index <= 0 || index >= conn.points.length - 1) return false;
+    const points = conn.points.map((pt) => ({ x: snap(pt.x), y: snap(pt.y) }));
+    const oriIn = segmentOrientation(points[index - 1], points[index]);
+    const oriOut = segmentOrientation(points[index], points[index + 1]);
+    if (!oriIn || !oriOut || oriIn === oriOut) return false;
+
+    let inStart = index;
+    while (inStart > 0 && segmentOrientation(points[inStart - 1], points[inStart]) === oriIn) inStart -= 1;
+    let outEnd = index;
+    while (outEnd < points.length - 1 && segmentOrientation(points[outEnd], points[outEnd + 1]) === oriOut) outEnd += 1;
+
+    const tx = snap(target.x);
+    const ty = snap(target.y);
+
+    if (oriIn === "H" && inStart > 0) {
+      for (let i = inStart; i <= index; i += 1) points[i].y = ty;
+    } else if (oriIn === "V" && inStart > 0) {
+      for (let i = inStart; i <= index; i += 1) points[i].x = tx;
+    }
+    if (oriOut === "H" && outEnd < points.length - 1) {
+      for (let i = index; i <= outEnd; i += 1) points[i].y = ty;
+    } else if (oriOut === "V" && outEnd < points.length - 1) {
+      for (let i = index; i <= outEnd; i += 1) points[i].x = tx;
+    }
+
+    const next = removeColinearPoints(dedupePoints(points));
+    if (!next || next.length < 2) return false;
+    conn.points = next;
+    return true;
+  }
+
+  function updateWireCornerHandles() {
+    clearWireCornerHandles();
+    if (state.autoRoute !== false) return;
+    const conn = state.selectedConnection;
+    if (!conn || !Array.isArray(conn.points) || conn.points.length < 3) return;
+    const turnIndices = getTurnIndices(conn.points);
+    turnIndices.forEach((index) => {
+      const pt = conn.points[index];
+      const handle = createSvgElement("circle", {
+        class: "wire-corner-handle",
+        cx: pt.x,
+        cy: pt.y,
+        r: WIRE_CORNER_HANDLE_RADIUS,
+      });
+      handle.addEventListener("pointerdown", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        wireCornerDrag.active = true;
+        wireCornerDrag.conn = conn;
+        wireCornerDrag.index = index;
+        wireCornerDrag.pointerId = event.pointerId;
+        try {
+          svg.setPointerCapture(event.pointerId);
+        } catch (_err) {
+          // Ignore capture failures.
+        }
+      });
+      wireCornerLayer.appendChild(handle);
+    });
+  }
 
 
   function createBlock(type, x = 60, y = 60, options = {}) {
@@ -1502,6 +1578,7 @@ export function createRenderer({
     onSelectBlock(blockId ? state.blocks.get(blockId) : null);
     updatePortVisibility();
     updateSelectionBox();
+    updateWireCornerHandles();
   }
 
   function selectConnection(conn) {
@@ -1536,9 +1613,18 @@ export function createRenderer({
     });
     updatePortVisibility();
     updateSelectionBox();
+    updateWireCornerHandles();
   }
 
   svg.addEventListener("pointermove", (event) => {
+    if (wireCornerDrag.active && event.pointerId === wireCornerDrag.pointerId) {
+      const point = clientToSvg(event.clientX, event.clientY);
+      if (moveWireCorner(wireCornerDrag.conn, wireCornerDrag.index, point)) {
+        applyWirePaths(new Map());
+        updateSelectionBox();
+      }
+      return;
+    }
     if (!marqueeState.active) return;
     if (event.pointerId !== marqueeState.pointerId) return;
     const point = clientToSvg(event.clientX, event.clientY);
@@ -1546,12 +1632,29 @@ export function createRenderer({
   });
 
   svg.addEventListener("pointerup", (event) => {
+    if (wireCornerDrag.active && event.pointerId === wireCornerDrag.pointerId) {
+      wireCornerDrag.active = false;
+      wireCornerDrag.conn = null;
+      wireCornerDrag.index = -1;
+      wireCornerDrag.pointerId = null;
+      updateWireCornerHandles();
+      if (typeof window !== "undefined") window.dispatchEvent(new CustomEvent("diagramChanged"));
+      return;
+    }
     if (!marqueeState.active) return;
     if (event.pointerId !== marqueeState.pointerId) return;
     finishMarqueeSelection(event);
   });
 
   svg.addEventListener("pointercancel", (event) => {
+    if (wireCornerDrag.active && event.pointerId === wireCornerDrag.pointerId) {
+      wireCornerDrag.active = false;
+      wireCornerDrag.conn = null;
+      wireCornerDrag.index = -1;
+      wireCornerDrag.pointerId = null;
+      updateWireCornerHandles();
+      return;
+    }
     if (!marqueeState.active) return;
     if (event.pointerId !== marqueeState.pointerId) return;
     marqueeRect.setAttribute("display", "none");
@@ -1618,6 +1721,7 @@ export function createRenderer({
     }
     updatePortVisibility();
     updateSelectionBox();
+    updateWireCornerHandles();
   }
 
   function startMarqueeSelection(event) {
@@ -1705,7 +1809,13 @@ export function createRenderer({
     applyWirePathsFast(new Set([conn]));
     state.routingDirty = true;
     if (state.dirtyConnections) state.dirtyConnections.add(conn);
-    queueRouteAfterPreview();
+    if (state.autoRoute !== false && !state.loadingDiagram) {
+      queueRouteAfterPreview();
+    } else {
+      state.routingDirty = false;
+      applyWirePaths(new Map());
+      updateWireCornerHandles();
+    }
     if (typeof window !== "undefined") {
       window.dispatchEvent(new CustomEvent("diagramChanged"));
     }
@@ -1751,6 +1861,19 @@ export function createRenderer({
         if (state.dirtyBlocks) state.dirtyBlocks.clear();
         if (state.dirtyConnections) state.dirtyConnections.clear();
         updateSelectionBox();
+        updateWireCornerHandles();
+        return;
+      }
+      if (state.autoRoute === false) {
+        state.debugRouteMode = "manual";
+        state.debugRouteTimeLimit = 0;
+        applyWirePaths(new Map());
+        refreshDebugLog();
+        state.routingDirty = false;
+        if (state.dirtyBlocks) state.dirtyBlocks.clear();
+        if (state.dirtyConnections) state.dirtyConnections.clear();
+        updateSelectionBox();
+        updateWireCornerHandles();
         return;
       }
       const dirtyTimeLimitMs = state.fastRouting ? 80 : 4000;
@@ -1800,6 +1923,7 @@ export function createRenderer({
       if (state.dirtyBlocks) state.dirtyBlocks.clear();
       if (state.dirtyConnections) state.dirtyConnections.clear();
       updateSelectionBox();
+      updateWireCornerHandles();
     });
   }
 
@@ -1813,6 +1937,7 @@ export function createRenderer({
     if (state.dirtyConnections) state.dirtyConnections.clear();
     updateSelectionBox();
     refreshDebugLog();
+    updateWireCornerHandles();
   }
 
   function applyWirePaths(paths) {
@@ -3148,6 +3273,7 @@ export function createRenderer({
     const selected = state.selectedId ? state.blocks.get(state.selectedId) : null;
     if (!selected) {
       selectionRect.setAttribute("display", "none");
+      updateWireCornerHandles();
       return;
     }
     const bounds = getRotatedBounds(selected);
@@ -3162,6 +3288,7 @@ export function createRenderer({
     selectionRect.setAttribute("y", rect.top);
     selectionRect.setAttribute("width", rect.right - rect.left);
     selectionRect.setAttribute("height", rect.bottom - rect.top);
+    updateWireCornerHandles();
   }
 
   function clearWorkspace() {
@@ -3178,6 +3305,7 @@ export function createRenderer({
     wireLayer.innerHTML = "";
     selectionRect.setAttribute("display", "none");
     marqueeRect.setAttribute("display", "none");
+    clearWireCornerHandles();
     updatePortVisibility();
   }
 
