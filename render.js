@@ -20,6 +20,10 @@ const SELECTION_PAD = 10;
 const HOP_RADIUS = 4;
 const USERFUNC_MIN_WIDTH = 120;
 const USERFUNC_MIN_HEIGHT = 80;
+const USERFUNC_PADDING_X = 12;
+const USERFUNC_PADDING_Y = 16;
+const USERFUNC_SETTLE_RETRIES = 4;
+const USERFUNC_SETTLE_DELAY_MS = 60;
 
 function createSvgElement(tag, attrs = {}, text = "") {
   const el = document.createElementNS("http://www.w3.org/2000/svg", tag);
@@ -2603,6 +2607,12 @@ export function createRenderer({
     return { x: scaleX || 1, y: scaleY || 1 };
   }
 
+  function pxToSvg(px, axis, scale = null) {
+    const currentScale = scale || getSvgScale();
+    const divisor = axis === "y" ? currentScale.y || 1 : currentScale.x || 1;
+    return px / divisor;
+  }
+
   function scaleMathToFit(mathGroup, targetWidth, targetHeight, padding = 8) {
     if (!mathGroup) return;
     const span = mathGroup.querySelector("span");
@@ -2636,8 +2646,71 @@ export function createRenderer({
     if (!width || !height) return null;
     const scale = getSvgScale();
     return {
-      w: width / scale.x,
-      h: height / scale.y,
+      w: pxToSvg(width, "x", scale),
+      h: pxToSvg(height, "y", scale),
+    };
+  }
+
+  function setUserFuncMathBox(mathGroup, width, height) {
+    if (!mathGroup) return;
+    const foreign = mathGroup.querySelector("foreignObject");
+    if (!foreign) return;
+    foreign.setAttribute("width", width);
+    foreign.setAttribute("height", height);
+  }
+
+  function computeUserFuncSize(block, { force = false, mathGroup = null } = {}) {
+    const rawExpr = String(block.params?.expr || "u");
+    const latex = exprToLatex(rawExpr);
+    const estimateWidth = estimateLatexWidth(latex);
+    const rawEstimate = USERFUNC_MIN_WIDTH;
+    let width = rawEstimate;
+    let height = USERFUNC_MIN_HEIGHT;
+    const measuredTex = measureUserFuncTex(`\\scriptsize{${latex}}`);
+    const hasMeasuredTex = Boolean(measuredTex && Number.isFinite(measuredTex.w) && Number.isFinite(measuredTex.h));
+    if (!hasMeasuredTex) {
+      width = Math.max(width, estimateWidth);
+    }
+    if (hasMeasuredTex) {
+      const scale = getSvgScale();
+      const scaledW = pxToSvg(measuredTex.w, "x", scale);
+      const scaledH = pxToSvg(measuredTex.h, "y", scale);
+      width = Math.max(width, Math.ceil(scaledW + USERFUNC_PADDING_X * 2));
+      height = Math.max(height, Math.ceil(scaledH + USERFUNC_PADDING_Y * 2));
+    }
+    if (mathGroup) {
+      for (let pass = 0; pass < 2; pass += 1) {
+        setUserFuncMathBox(mathGroup, width, height);
+        const size = getMathSpanSize(mathGroup);
+        if (!size) continue;
+        const neededW = Math.ceil(size.w + USERFUNC_PADDING_X * 2);
+        const neededH = Math.ceil(size.h + USERFUNC_PADDING_Y * 2);
+        const needsResize = neededW > width || neededH > height;
+        if (!needsResize && !force) break;
+        width = Math.max(width, neededW);
+        height = Math.max(height, neededH);
+      }
+    }
+    return {
+      width,
+      height,
+      rawExpr,
+      latex,
+      estimateWidth,
+      rawEstimate,
+      measuredTex,
+      hasMeasuredTex,
+      paddingX: USERFUNC_PADDING_X,
+      paddingY: USERFUNC_PADDING_Y,
+    };
+  }
+
+  function computeRenderedUserFuncSize(mathGroup) {
+    const size = getMathSpanSize(mathGroup);
+    if (!size) return null;
+    return {
+      width: Math.max(USERFUNC_MIN_WIDTH, Math.ceil(size.w + USERFUNC_PADDING_X * 2)),
+      height: Math.max(USERFUNC_MIN_HEIGHT, Math.ceil(size.h + USERFUNC_PADDING_Y * 2)),
     };
   }
 
@@ -2656,46 +2729,9 @@ export function createRenderer({
 
   function resizeUserFuncFromLabel(block, { force = false } = {}) {
     if (!block || block.type !== "userFunc") return;
-    const rawExpr = String(block.params?.expr || "u");
-    const latex = exprToLatex(rawExpr);
-    const estimateWidth = estimateLatexWidth(latex);
-    const rawEstimate = USERFUNC_MIN_WIDTH;
     const mathGroup = block.group.querySelector(".userfunc-math");
-    const paddingX = 12;
-    const paddingY = 16;
-    // Use a small floor and let rendered KaTeX measurement drive final size.
-    // The LaTeX estimate is only a fallback before render metrics are available.
-    let width = rawEstimate;
-    let height = USERFUNC_MIN_HEIGHT;
-    const measuredTex = measureUserFuncTex(`\\scriptsize{${latex}}`);
-    const hasMeasuredTex = Boolean(measuredTex && Number.isFinite(measuredTex.w) && Number.isFinite(measuredTex.h));
-    if (!hasMeasuredTex) {
-      width = Math.max(width, estimateWidth);
-    }
-    if (measuredTex) {
-      const scale = getSvgScale();
-      const scaledW = measuredTex.w / (scale.x || 1);
-      const scaledH = measuredTex.h / (scale.y || 1);
-      width = Math.max(width, Math.ceil(scaledW + paddingX * 2));
-      height = Math.max(height, Math.ceil(scaledH + paddingY * 2));
-    }
-    if (mathGroup) {
-      for (let pass = 0; pass < 2; pass += 1) {
-        const foreign = mathGroup.querySelector("foreignObject");
-        if (foreign) {
-          foreign.setAttribute("width", width);
-          foreign.setAttribute("height", height);
-        }
-        const size = getMathSpanSize(mathGroup);
-        if (!size) continue;
-        const neededW = Math.ceil(size.w + paddingX * 2);
-        const neededH = Math.ceil(size.h + paddingY * 2);
-        const needsResize = neededW > width || neededH > height;
-        if (!needsResize && !force) break;
-        width = Math.max(width, neededW);
-        height = Math.max(height, neededH);
-      }
-    }
+    const sizing = computeUserFuncSize(block, { force, mathGroup });
+    const { width, height } = sizing;
     if (DEBUG_WIRE_CHECKS || window.vibesimDebugUserFunc) {
       const scale = getSvgScale();
       const mathGroupEl = mathGroup || block.group.querySelector(".userfunc-math");
@@ -2715,11 +2751,11 @@ export function createRenderer({
         viewBox,
         blockSize: `${Math.round(block.width)}x${Math.round(block.height)}`,
         targetSize: `${Math.round(width)}x${Math.round(height)}`,
-        padding: `${paddingX},${paddingY}`,
-        estimateWidth,
-        rawEstimate,
-        hasMeasuredTex,
-        measureTexPx: measuredTex ? `${Math.round(measuredTex.w)}x${Math.round(measuredTex.h)}` : "none",
+        padding: `${sizing.paddingX},${sizing.paddingY}`,
+        estimateWidth: sizing.estimateWidth,
+        rawEstimate: sizing.rawEstimate,
+        hasMeasuredTex: sizing.hasMeasuredTex,
+        measureTexPx: sizing.measuredTex ? `${Math.round(sizing.measuredTex.w)}x${Math.round(sizing.measuredTex.h)}` : "none",
         foreign: `${Math.round(foreignW)}x${Math.round(foreignH)}`,
         rect: `${rectW}x${rectH}`,
         scroll: `${Math.round(scrollW)}x${Math.round(scrollH)}`,
@@ -2795,31 +2831,27 @@ export function createRenderer({
     if (!block || block.type !== "userFunc") return;
     const id = block.id;
     const attempts = userFuncResizeAttempts.get(id) || 0;
-    if (attempts >= 4) {
+    if (attempts >= USERFUNC_SETTLE_RETRIES) {
       userFuncResizeAttempts.delete(id);
       return;
     }
     userFuncResizeAttempts.set(id, attempts + 1);
     setTimeout(() => {
       const mathGroup = block.group?.querySelector?.(".userfunc-math");
-      const size = getMathSpanSize(mathGroup);
-      if (!size) return;
-      const paddingX = 12;
-      const paddingY = 16;
-      const neededW = Math.ceil(size.w + paddingX * 2);
-      const neededH = Math.ceil(size.h + paddingY * 2);
-      if (neededW > block.width || neededH > block.height) {
+      const renderedSize = computeRenderedUserFuncSize(mathGroup);
+      if (!renderedSize) return;
+      if (renderedSize.width > block.width || renderedSize.height > block.height) {
         applyUserFuncSize(
           block,
-          Math.max(block.width, neededW),
-          Math.max(block.height, neededH),
+          Math.max(block.width, renderedSize.width),
+          Math.max(block.height, renderedSize.height),
           { force: true }
         );
         scheduleUserFuncFit(block);
       } else {
         userFuncResizeAttempts.delete(id);
       }
-    }, 60);
+    }, USERFUNC_SETTLE_DELAY_MS);
   }
 
   if (typeof window !== "undefined") {
