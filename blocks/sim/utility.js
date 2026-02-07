@@ -13,6 +13,12 @@ const conditionTrue = (condition, input, threshold) => {
   return input >= threshold;
 };
 
+const getPrevOutput = (ctx, blockId, fallback) => {
+  const upstreamState = ctx.blockState?.get(blockId);
+  if (upstreamState && Number.isFinite(upstreamState.output)) return upstreamState.output;
+  return fallback;
+};
+
 const innerHandlers = {
   ...sourceSimHandlers,
   ...mathSimHandlers,
@@ -246,8 +252,10 @@ export const utilitySimHandlers = {
       const readInput = (idx, fallback = 0) => {
         const fromId = inputs[idx];
         if (!fromId) return { has: true, value: fallback };
-        if (!ctx.outputs.has(fromId)) return { has: false, value: fallback };
-        return { has: true, value: values[idx] ?? fallback };
+        if (!ctx.outputs.has(fromId)) {
+          return { has: true, value: getPrevOutput(ctx, fromId, fallback) };
+        }
+        return { has: true, value: values[idx] ?? getPrevOutput(ctx, fromId, fallback) };
       };
       const top = readInput(0, 0);
       const cond = readInput(1, 0);
