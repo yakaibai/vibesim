@@ -937,6 +937,7 @@ body.is-root-diagram #subsystemUpBtn {
   stroke: #2c3240;
   stroke-width: 2;
   opacity: 0;
+  transition: fill 120ms ease, stroke 120ms ease, stroke-width 120ms ease, transform 120ms ease;
 }
 
 .ports-visible .port {
@@ -951,6 +952,12 @@ body.is-root-diagram #subsystemUpBtn {
 
 .port.pending {
   fill: #4caf7a;
+}
+
+.ports-visible .port-group.hovered .port:not(.pending) {
+  fill: #ffd88a;
+  stroke: var(--accent);
+  stroke-width: 2.4;
 }
 
 .wire {

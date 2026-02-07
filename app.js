@@ -6,7 +6,7 @@ import { stabilityMargins } from "./control/margins.js";
 import { diagramToFRD } from "./control/diagram.js";
 import { blockLibrary } from "./blocks/index.js";
 import { createInspector } from "./blocks/inspector.js";
-import { evalExpression, exprToLatex } from "./utils/expr.js";
+import { evalExpression } from "./utils/expr.js";
 import { GRID_SIZE } from "./geometry.js";
 
 const svg = document.getElementById("svgCanvas");
@@ -43,25 +43,6 @@ const blockLibraryGroups = document.getElementById("blockLibraryGroups");
 const DEBUG_UI = false;
 
 if (debugPanel) debugPanel.hidden = !DEBUG_UI;
-if (typeof window !== "undefined") window.vibesimDebugUserFunc = DEBUG_UI;
-
-const updateUserFuncDebug = () => {
-  const selected = state.selectedId ? state.blocks.get(state.selectedId) : null;
-  if (selected?.type === "userFunc") {
-    const expr = String(selected.params?.expr || "u");
-    const latex = exprToLatex(expr);
-    const sizing = window.vibesimUserFuncSizing || "";
-    const text = `[userFunc]\nexpr=${expr}\nlatex=${latex}${sizing ? `\n\n${sizing}` : ""}`;
-    window.vibesimDebugExtra = text;
-    if (debugLog) debugLog.textContent = text;
-    return;
-  }
-  window.vibesimDebugExtra = "";
-};
-
-window.addEventListener("userFuncSizingDebug", () => {
-  updateUserFuncDebug();
-});
 
 if (rotateSelectionBtn) rotateSelectionBtn.disabled = true;
 
@@ -459,7 +440,6 @@ const renderer = createRenderer({
     renderInspector(blockId);
     focusPropertiesPanel();
     updateStabilityPanel();
-    updateUserFuncDebug();
   },
   onSelectConnection: (connectionId) => {
     renderInspector(connectionId);
@@ -485,7 +465,6 @@ if (inspectorBody) {
     const target = event.target;
     if (!(target instanceof HTMLElement)) return;
     if (target.dataset.edit !== "expr") return;
-    updateUserFuncDebug();
   });
 }
 

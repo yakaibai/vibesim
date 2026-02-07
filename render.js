@@ -56,7 +56,6 @@ let katexRetryScheduled = false;
 const katexQueue = new Set();
 let userFuncMeasureRoot = null;
 const userFuncResizeAttempts = new Map();
-const userFuncSizingDebug = new Map();
 
 function notifyUserFuncResize(group) {
   const blockEl = group?.closest?.(".svg-block");
@@ -116,23 +115,6 @@ function measureUserFuncTex(tex) {
   const height = Math.max(rect.height, target.scrollHeight || 0);
   if (!width || !height) return null;
   return { w: width, h: height };
-}
-
-function setUserFuncSizingDebug(block, info) {
-  if (!block || typeof window === "undefined") return;
-  const lines = [
-    "[userFunc sizing]",
-    `blockId=${block.id}`,
-    `expr=${String(block.params?.expr || "u")}`,
-    `latex=${exprToLatex(String(block.params?.expr || "u"))}`,
-  ];
-  Object.entries(info || {}).forEach(([key, value]) => {
-    lines.push(`${key}=${value}`);
-  });
-  const text = lines.join("\n");
-  window.vibesimUserFuncSizing = text;
-  userFuncSizingDebug.set(block.id, text);
-  window.dispatchEvent(new CustomEvent("userFuncSizingDebug", { detail: { blockId: block.id, text } }));
 }
 
 function queueKatexRender() {
@@ -833,6 +815,20 @@ export function createRenderer({
   onSelectConnection,
   onOpenSubsystem,
 }) {
+  let routeAfterPreviewScheduled = false;
+
+  const queueRouteAfterPreview = () => {
+    if (routeAfterPreviewScheduled) return;
+    routeAfterPreviewScheduled = true;
+    // Let the provisional connection paint first, then route on a later frame.
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        routeAfterPreviewScheduled = false;
+        updateConnections();
+      });
+    });
+  };
+
   const ensureWireArrowMarker = () => {
     let defs = svg.querySelector("defs");
     if (!defs) {
@@ -1100,6 +1096,12 @@ export function createRenderer({
       event.stopPropagation();
       handlePortClick(group);
     };
+    group.addEventListener("pointerenter", () => {
+      group.classList.add("hovered");
+    });
+    group.addEventListener("pointerleave", () => {
+      group.classList.remove("hovered");
+    });
     hit.addEventListener("click", onClick);
     shape.addEventListener("click", onClick);
     group.appendChild(hit);
@@ -1699,9 +1701,11 @@ export function createRenderer({
     path.addEventListener("click", onSelect);
     hitPath.addEventListener("click", onSelect);
     state.connections.push(conn);
+    conn.points = buildFastDragPathFromPorts(conn);
+    applyWirePathsFast(new Set([conn]));
     state.routingDirty = true;
     if (state.dirtyConnections) state.dirtyConnections.add(conn);
-    updateConnections();
+    queueRouteAfterPreview();
     if (typeof window !== "undefined") {
       window.dispatchEvent(new CustomEvent("diagramChanged"));
     }
@@ -2730,38 +2734,7 @@ export function createRenderer({
   function resizeUserFuncFromLabel(block, { force = false } = {}) {
     if (!block || block.type !== "userFunc") return;
     const mathGroup = block.group.querySelector(".userfunc-math");
-    const sizing = computeUserFuncSize(block, { force, mathGroup });
-    const { width, height } = sizing;
-    if (DEBUG_WIRE_CHECKS || window.vibesimDebugUserFunc) {
-      const scale = getSvgScale();
-      const mathGroupEl = mathGroup || block.group.querySelector(".userfunc-math");
-      const foreign = mathGroupEl?.querySelector?.("foreignObject") || null;
-      const span = mathGroupEl?.querySelector?.("span") || null;
-      const katexEl = mathGroupEl?.querySelector?.(".katex") || null;
-      const rect = katexEl?.getBoundingClientRect?.() || span?.getBoundingClientRect?.();
-      const rectW = rect?.width ? Math.round(rect.width) : 0;
-      const rectH = rect?.height ? Math.round(rect.height) : 0;
-      const scrollW = katexEl?.scrollWidth || span?.scrollWidth || 0;
-      const scrollH = katexEl?.scrollHeight || span?.scrollHeight || 0;
-      const foreignW = Number(foreign?.getAttribute?.("width") || 0);
-      const foreignH = Number(foreign?.getAttribute?.("height") || 0);
-      const viewBox = svg.getAttribute("viewBox") || "";
-      setUserFuncSizingDebug(block, {
-        scale: `${scale.x.toFixed(3)}x${scale.y.toFixed(3)}`,
-        viewBox,
-        blockSize: `${Math.round(block.width)}x${Math.round(block.height)}`,
-        targetSize: `${Math.round(width)}x${Math.round(height)}`,
-        padding: `${sizing.paddingX},${sizing.paddingY}`,
-        estimateWidth: sizing.estimateWidth,
-        rawEstimate: sizing.rawEstimate,
-        hasMeasuredTex: sizing.hasMeasuredTex,
-        measureTexPx: sizing.measuredTex ? `${Math.round(sizing.measuredTex.w)}x${Math.round(sizing.measuredTex.h)}` : "none",
-        foreign: `${Math.round(foreignW)}x${Math.round(foreignH)}`,
-        rect: `${rectW}x${rectH}`,
-        scroll: `${Math.round(scrollW)}x${Math.round(scrollH)}`,
-        devicePixelRatio: typeof window !== "undefined" ? window.devicePixelRatio || 1 : 1,
-      });
-    }
+    const { width, height } = computeUserFuncSize(block, { force, mathGroup });
     applyUserFuncSize(block, width, height, { force });
     scheduleUserFuncFit(block);
   }
