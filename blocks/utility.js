@@ -13,6 +13,10 @@ const conditionToLatex = (condition, threshold) => {
 
 export const createUtilityTemplates = (helpers) => {
   const { createSvgElement, renderTeXMath, GRID_SIZE } = helpers;
+  const estimateLabelWidth = (text, charWidth = 7.5, padding = 16) => {
+    const len = Math.max(String(text || "").length, 1);
+    return Math.ceil(len * charWidth + padding);
+  };
   const computePortYs = (count, height) => {
     if (count <= 0) return [];
     if (count === 1) return [height / 2];
@@ -82,7 +86,20 @@ export const createUtilityTemplates = (helpers) => {
         const outCount = Math.max(0, Number(block.params?.externalOutputs?.length) || 0);
         const maxPorts = Math.max(inCount, outCount, 1);
         const height = Math.max(80, 40 + (maxPorts - 1) * 20);
-        const width = 140;
+        const name = String(block.params?.name || "Subsystem");
+        const inNames = Array.isArray(block.params?.externalInputs) ? block.params.externalInputs : [];
+        const outNames = Array.isArray(block.params?.externalOutputs) ? block.params.externalOutputs : [];
+        const leftColumn = Math.max(
+          24,
+          ...inNames.map((entry, idx) => estimateLabelWidth(entry?.name || `in${idx + 1}`))
+        );
+        const rightColumn = Math.max(
+          24,
+          ...outNames.map((entry, idx) => estimateLabelWidth(entry?.name || `out${idx + 1}`))
+        );
+        const titleWidth = estimateLabelWidth(name, 8, 28);
+        const centerColumn = Math.max(44, titleWidth);
+        const width = Math.max(140, leftColumn + centerColumn + rightColumn);
         block.width = width;
         block.height = height;
         const inYs = computePortYs(inCount || 1, height);

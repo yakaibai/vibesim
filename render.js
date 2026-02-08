@@ -379,11 +379,28 @@ function renderCenteredAxesPlot(group, width, height, plotPath) {
   });
 }
 
+function computeLabelMathWidth(tex, blockWidth) {
+  let width = Math.max(blockWidth, estimateLatexWidth(tex) + 12);
+  const measured = measureUserFuncTex(tex);
+  if (measured && Number.isFinite(measured.w)) {
+    // `measureUserFuncTex` is in CSS px from an offscreen div. We use it directly
+    // here to avoid depending on renderer-local scale helpers.
+    width = Math.max(width, Math.ceil(measured.w + 12));
+  }
+  return width;
+}
+
 function renderLabelNode(block, label, { showNode = true } = {}) {
   const group = block.group;
-  const mathGroup = createSvgElement("g", { class: "label-math", transform: "translate(0,-24)" });
+  const tex = formatLabelTeX(label);
+  const mathWidth = computeLabelMathWidth(tex, block.width);
+  const offsetX = (block.width - mathWidth) / 2;
+  const mathGroup = createSvgElement("g", {
+    class: "label-math",
+    transform: `translate(${offsetX},-24)`,
+  });
   group.appendChild(mathGroup);
-  renderTeXMath(mathGroup, formatLabelTeX(label), block.width, block.height);
+  renderTeXMath(mathGroup, tex, mathWidth, block.height);
   if (showNode) {
     group.appendChild(createSvgElement("circle", { cx: 20, cy: 20, r: 5, class: "label-node" }));
   }
@@ -392,18 +409,12 @@ function renderLabelNode(block, label, { showNode = true } = {}) {
 function formatLabelTeX(label) {
   const text = String(label || "").trim();
   if (!text) return "";
-  // Keep explicit TeX commands unchanged (e.g. \theta, \dot{x})
-  if (text.startsWith("\\")) return text;
-  // Single-character symbols (x, y, t) should keep math italics
-  if (text.length <= 1) return text;
-  const escaped = text
-    .replace(/\\/g, "\\textbackslash{}")
-    .replace(/([{}])/g, "\\$1")
-    .replace(/_/g, "\\_")
-    .replace(/\^/g, "\\textasciicircum{}")
-    .replace(/~/g, "\\textasciitilde{}")
-    .replace(/ /g, "\\ ");
-  return `\\mathrm{${escaped}}`;
+  // Special-case: labels starting with 2+ letters are treated as text-like names.
+  if (/^[A-Za-z]{2,}/.test(text)) {
+    return `\\mathrm{${text}}`;
+  }
+  // Otherwise interpret the label directly as LaTeX.
+  return text;
 }
 
 export function buildFallbackPath(fromPos, toPos) {
@@ -1010,6 +1021,8 @@ export function createRenderer({
     }
     let blockWidth = template.width;
     let blockHeight = template.height;
+    let dynamicInputs = null;
+    let dynamicOutputs = null;
     if (type === "scope") {
       const paramWidth = Number(params.width);
       const paramHeight = Number(params.height);
@@ -1029,7 +1042,11 @@ export function createRenderer({
       template.resize(probe);
       blockWidth = probe.width;
       blockHeight = probe.height;
+      dynamicInputs = Array.isArray(probe.dynamicInputs) ? probe.dynamicInputs.map((p) => ({ ...p })) : null;
+      dynamicOutputs = Array.isArray(probe.dynamicOutputs) ? probe.dynamicOutputs.map((p) => ({ ...p })) : null;
     }
+    const inputSpecs = dynamicInputs || template.inputs;
+    const outputSpecs = dynamicOutputs || template.outputs;
     const group = createSvgElement("g", {
       class: `svg-block type-${type}`,
       "data-block-id": id,
@@ -1043,12 +1060,14 @@ export function createRenderer({
       width: blockWidth,
       height: blockHeight,
       rotation: options.rotation ?? 0,
-      inputs: template.inputs.length,
-      outputs: template.outputs.length,
+      inputs: inputSpecs.length,
+      outputs: outputSpecs.length,
       params,
       group,
       ports: [],
       paramLabels: {},
+      dynamicInputs: dynamicInputs || undefined,
+      dynamicOutputs: dynamicOutputs || undefined,
     };
 
     template.render(block);
@@ -1080,7 +1099,7 @@ export function createRenderer({
     group.appendChild(dragRect);
     block.dragRect = dragRect;
 
-    template.inputs.forEach((port, index) => {
+    inputSpecs.forEach((port, index) => {
       const circle = createPortCircle(id, "in", index, port, type);
       group.appendChild(circle);
       block.ports.push({
@@ -1092,7 +1111,7 @@ export function createRenderer({
         wireY: port.wireY ?? port.y,
       });
     });
-    template.outputs.forEach((port, index) => {
+    outputSpecs.forEach((port, index) => {
       const circle = createPortCircle(id, "out", index, port, type);
       group.appendChild(circle);
       block.ports.push({
@@ -3548,7 +3567,13 @@ export function createRenderer({
     }
     if (block.type === "labelSource" || block.type === "labelSink") {
       const mathGroup = block.group.querySelector(".label-math");
-      if (mathGroup) renderTeXMath(mathGroup, formatLabelTeX(block.params.name || ""), block.width, block.height);
+      if (mathGroup) {
+        const tex = formatLabelTeX(block.params.name || "");
+        const mathWidth = computeLabelMathWidth(tex, block.width);
+        const offsetX = (block.width - mathWidth) / 2;
+        mathGroup.setAttribute("transform", `translate(${offsetX},-24)`);
+        renderTeXMath(mathGroup, tex, mathWidth, block.height);
+      }
       if (block.type === "labelSink") {
         const showNode = block.params.showNode !== false;
         const circle = block.group.querySelector("circle.label-node");
