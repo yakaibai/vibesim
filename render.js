@@ -1246,7 +1246,7 @@ export function createRenderer({
     }
 
     if (portType === "in") {
-      createConnection(from.blockId, blockId, portIndex);
+      createConnection(from.blockId, blockId, portIndex, from.portIndex ?? 0);
     }
     clearPending();
   }

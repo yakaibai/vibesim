@@ -58,10 +58,15 @@ export function simulate({ state, runtimeInput, statusEl, downloadFile }) {
     inputMap.set(block.id, Array(block.inputs).fill(null));
   });
 
+  const sourceKey = (fromId, fromIndex) => {
+    const idx = Number(fromIndex ?? 0);
+    return idx > 0 ? `${fromId}:${idx}` : fromId;
+  };
+
   state.connections.forEach((conn) => {
     const inputs = inputMap.get(conn.to);
     if (!inputs) return;
-    if (conn.toIndex < inputs.length) inputs[conn.toIndex] = conn.from;
+    if (conn.toIndex < inputs.length) inputs[conn.toIndex] = sourceKey(conn.from, conn.fromIndex);
   });
 
   const dt = Math.max(1e-6, Number(state.sampleTime ?? variables.dt ?? variables.sampleTime ?? 0.01) || 0.01);

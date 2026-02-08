@@ -34,6 +34,10 @@ const getInnerHandler = (type) => {
 };
 
 const deepClone = (value) => JSON.parse(JSON.stringify(value));
+const sourceKey = (fromId, fromIndex) => {
+  const idx = Number(fromIndex ?? 0);
+  return idx > 0 ? `${fromId}:${idx}` : fromId;
+};
 
 const inferPortCounts = (blocks, connections) => {
   const inMap = new Map(blocks.map((b) => [b.id, 0]));
@@ -96,7 +100,9 @@ const buildSubsystemState = (ctx, block, spec) => {
   connections.forEach((conn) => {
     const row = inputMap.get(conn.to);
     if (!row) return;
-    if (conn.toIndex >= 0 && conn.toIndex < row.length) row[conn.toIndex] = conn.from;
+    if (conn.toIndex >= 0 && conn.toIndex < row.length) {
+      row[conn.toIndex] = sourceKey(conn.from, conn.fromIndex);
+    }
   });
 
   const resolvedParams = new Map();
@@ -201,6 +207,7 @@ const runSubsystemOutputs = (outerCtx, block, stateData) => {
 
   stateData.outputs = outputs;
   let out = 0;
+  const externalValues = [];
   const getExternalOutputValue = (blockId) => {
     if (outputs.has(blockId)) return outputs.get(blockId) ?? 0;
     const sinkInputs = stateData.inputMap.get(blockId) || [];
@@ -210,10 +217,12 @@ const runSubsystemOutputs = (outerCtx, block, stateData) => {
   };
   const outputPairs = Array.from(stateData.outputLookup.entries()).sort((a, b) => a[1] - b[1]);
   if (outputPairs.length) {
-    const firstId = outputPairs[0][0];
-    out = getExternalOutputValue(firstId);
+    outputPairs.forEach(([id, idx]) => {
+      externalValues[idx] = getExternalOutputValue(id);
+    });
+    out = externalValues[0] ?? 0;
   }
-  return out;
+  return { primary: out, values: externalValues };
 };
 
 const advanceSubsystemState = (outerCtx, stateData) => {
@@ -301,17 +310,29 @@ export const utilitySimHandlers = {
         ctx.outputs.set(block.id, 0);
         return;
       }
-      const out = runSubsystemOutputs(ctx, block, subsystemState);
-      ctx.outputs.set(block.id, out);
+      const result = runSubsystemOutputs(ctx, block, subsystemState);
+      ctx.outputs.set(block.id, result.primary);
+      (result.values || []).forEach((value, idx) => {
+        if (idx <= 0) return;
+        ctx.outputs.set(`${block.id}:${idx}`, value ?? 0);
+      });
     },
     algebraic: (ctx, block) => {
       const state = ctx.blockState.get(block.id);
       const subsystemState = state?.subsystem;
       if (!subsystemState) return null;
-      const out = runSubsystemOutputs(ctx, block, subsystemState);
+      const result = runSubsystemOutputs(ctx, block, subsystemState);
       const prev = ctx.outputs.get(block.id);
-      ctx.outputs.set(block.id, out);
-      return { updated: prev !== out && !(Number.isNaN(prev) && Number.isNaN(out)) };
+      ctx.outputs.set(block.id, result.primary);
+      (result.values || []).forEach((value, idx) => {
+        if (idx <= 0) return;
+        ctx.outputs.set(`${block.id}:${idx}`, value ?? 0);
+      });
+      return {
+        updated:
+          prev !== result.primary &&
+          !(Number.isNaN(prev) && Number.isNaN(result.primary)),
+      };
     },
     update: (ctx, block) => {
       const state = ctx.blockState.get(block.id);
