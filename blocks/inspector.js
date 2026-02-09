@@ -242,7 +242,7 @@ export const createInspector = ({
         <label class="param">Height
           <input type="number" data-edit="height" value="${block.params.height ?? block.height}" min="120" step="10">
         </label>
-        <label class="param param-inline"><span class="param-name">Show tick labels</span><input type="checkbox" data-edit="showTickLabels" ${block.params.showTickLabels === true ? "checked" : ""}></label>
+        <div class="param param-inline"><span class="param-name">Show tick labels</span><input type="checkbox" data-edit="showTickLabels" ${block.params.showTickLabels === true ? "checked" : ""}></div>
       `;
       ["tMin", "tMax", "yMin", "yMax"].forEach((key) => {
         const input = inspectorBody.querySelector(`input[data-edit='${key}']`);
@@ -290,7 +290,7 @@ export const createInspector = ({
         <label class="param">Height
           <input type="number" data-edit="height" value="${block.params.height ?? block.height}" min="120" step="10">
         </label>
-        <label class="param param-inline"><span class="param-name">Show tick labels</span><input type="checkbox" data-edit="showTickLabels" ${block.params.showTickLabels === true ? "checked" : ""}></label>
+        <div class="param param-inline"><span class="param-name">Show tick labels</span><input type="checkbox" data-edit="showTickLabels" ${block.params.showTickLabels === true ? "checked" : ""}></div>
       `;
       ["xMin", "xMax", "yMin", "yMax"].forEach((key) => {
         const input = inspectorBody.querySelector(`input[data-edit='${key}']`);
@@ -403,8 +403,8 @@ export const createInspector = ({
         <label class="param">Label name
           <input type="text" data-edit="name" value="${block.params.name || ""}">
         </label>
-        <label class="param param-inline"><span class="param-name">Is external port</span><input type="checkbox" data-edit="isExternalPort" ${block.params.isExternalPort === true ? "checked" : ""}></label>
-        ${block.type === "labelSink" ? `<label class="param param-inline"><span class="param-name">Show node</span><input type="checkbox" data-edit="showNode" ${block.params.showNode !== false ? "checked" : ""}></label>` : ""}
+        <div class="param param-inline"><span class="param-name">Is external port</span><input type="checkbox" data-edit="isExternalPort" ${block.params.isExternalPort === true ? "checked" : ""}></div>
+        ${block.type === "labelSink" ? `<div class="param param-inline"><span class="param-name">Show node</span><input type="checkbox" data-edit="showNode" ${block.params.showNode !== false ? "checked" : ""}></div>` : ""}
       `;
       const nameInput = inspectorBody.querySelector("input[data-edit='name']");
       nameInput.addEventListener("input", () => {
