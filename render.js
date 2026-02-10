@@ -558,6 +558,7 @@ export function buildPathWithHops(segments, otherSegments, hopClaims = null) {
     }
     return true;
   };
+  const hopSweepFlag = (dir) => (dir === 1 ? 1 : 0);
 
   segments.forEach((seg) => {
     if (current.x !== seg.a.x || current.y !== seg.a.y) {
@@ -579,8 +580,9 @@ export function buildPathWithHops(segments, otherSegments, hopClaims = null) {
       crossings.forEach((x) => {
         const key = hopKey(x, seg.a.y);
         if (!canDrawHop(hopClaims, key, "H")) return;
+        const sweep = hopSweepFlag(dir);
         commands.push(`L ${x - HOP_RADIUS * dir} ${seg.a.y}`);
-        commands.push(`a ${HOP_RADIUS} ${HOP_RADIUS} 0 0 1 ${HOP_RADIUS * 2 * dir} 0`);
+        commands.push(`a ${HOP_RADIUS} ${HOP_RADIUS} 0 0 ${sweep} ${HOP_RADIUS * 2 * dir} 0`);
       });
       commands.push(`L ${seg.b.x} ${seg.b.y}`);
     } else {
@@ -591,8 +593,9 @@ export function buildPathWithHops(segments, otherSegments, hopClaims = null) {
       crossings.forEach((y) => {
         const key = hopKey(seg.a.x, y);
         if (!canDrawHop(hopClaims, key, "V")) return;
+        const sweep = hopSweepFlag(dir);
         commands.push(`L ${seg.a.x} ${y - HOP_RADIUS * dir}`);
-        commands.push(`a ${HOP_RADIUS} ${HOP_RADIUS} 0 0 1 0 ${HOP_RADIUS * 2 * dir}`);
+        commands.push(`a ${HOP_RADIUS} ${HOP_RADIUS} 0 0 ${sweep} 0 ${HOP_RADIUS * 2 * dir}`);
       });
       commands.push(`L ${seg.b.x} ${seg.b.y}`);
     }
