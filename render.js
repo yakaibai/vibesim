@@ -3036,6 +3036,19 @@ export function createRenderer({
     mathGroup.setAttribute("transform", `translate(${shiftX}, 0)`);
   }
 
+  function toLeadingMinusTex(value, fallback = "0") {
+    const text = String(value ?? fallback).trim();
+    if (!text) return { tex: fallback, hasLeadingNegative: false };
+    if (text.startsWith("-")) {
+      const rest = text.slice(1).trimStart();
+      return {
+        tex: `\\text{-}${rest || fallback}`,
+        hasLeadingNegative: true,
+      };
+    }
+    return { tex: text, hasLeadingNegative: false };
+  }
+
   function resizeUserFuncFromLabel(block, { force = false } = {}) {
     const config = getAutoMathConfig(block);
     if (!config) return;
@@ -3660,8 +3673,10 @@ export function createRenderer({
     if (block.type === "constant") {
       const mathGroup = block.group.querySelector(".constant-math");
       if (mathGroup) {
-        renderTeXMath(mathGroup, `${block.params.value}`, block.width, block.height);
+        const { tex } = toLeadingMinusTex(block.params.value, "0");
+        renderTeXMath(mathGroup, tex, block.width, block.height);
         scaleMathToFit(mathGroup, block.width, block.height);
+        mathGroup.setAttribute("transform", "");
       }
     }
     if (block.type === "step") {
@@ -3785,9 +3800,19 @@ export function createRenderer({
     if (block.type === "gain") {
       const mathGroup = block.group.querySelector(".gain-math");
       if (mathGroup) {
-        renderTeXMath(mathGroup, `${block.params.gain}`, block.width, block.height);
+        const { tex } = toLeadingMinusTex(block.params.gain, "1");
+        renderTeXMath(mathGroup, tex, block.width, block.height);
         scaleMathToFit(mathGroup, block.width * 0.6, block.height);
         positionGainMath(mathGroup, block, 8);
+        const base = mathGroup.getAttribute("transform") || "translate(0, 0)";
+        const match = base.match(/translate\(\s*([-+]?\d*\.?\d+)\s*,?\s*([-+]?\d*\.?\d+)?\s*\)/);
+        if (match) {
+          const x = Number(match[1]) || 0;
+          const y = Number(match[2] || 0) || 0;
+          mathGroup.setAttribute("transform", `translate(${x - 4}, ${y})`);
+        } else {
+          mathGroup.setAttribute("transform", "translate(-4, 0)");
+        }
       }
     }
     if (block.type === "sum") {
