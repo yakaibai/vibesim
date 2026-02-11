@@ -63,7 +63,7 @@ function buildAlgebraicPlan(algebraicBlocks, inputMap) {
   return { ordered: hasCycle ? algebraicBlocks : ordered, hasCycle };
 }
 
-export function simulate({ state, runtimeInput, statusEl, downloadFile }) {
+export async function simulate({ state, runtimeInput, statusEl, downloadFile }) {
   statusEl.textContent = "Running...";
   const blocks = Array.from(state.blocks.values());
   const blockHandlers = blocks.map((block) => ({ block, handler: simHandlers[block.type] }));
@@ -152,8 +152,14 @@ export function simulate({ state, runtimeInput, statusEl, downloadFile }) {
 
   let algebraicLoopFailed = false;
   let algebraicLoopTime = 0;
+  const canProgressiveRun =
+    typeof window !== "undefined" &&
+    typeof window.requestAnimationFrame === "function" &&
+    typeof Element !== "undefined" &&
+    statusEl instanceof Element;
+  const chunkSize = 250;
 
-  for (let i = 0; i <= samples; i += 1) {
+  const runStep = (i) => {
     const t = i * dt;
     time.push(t);
     const outputs = new Map();
@@ -187,7 +193,7 @@ export function simulate({ state, runtimeInput, statusEl, downloadFile }) {
       if (progress && iter >= maxIter) {
         algebraicLoopFailed = true;
         algebraicLoopTime = t;
-        break;
+        return false;
       }
       }
     }
@@ -195,6 +201,37 @@ export function simulate({ state, runtimeInput, statusEl, downloadFile }) {
     afterStepBlocks.forEach(({ block, handler }) => handler.afterStep(ctx, block));
 
     updateBlocks.forEach(({ block, handler }) => handler.update(ctx, block));
+    return !algebraicLoopFailed;
+  };
+
+  if (canProgressiveRun) {
+    let i = 0;
+    while (i <= samples) {
+      const end = Math.min(samples, i + chunkSize - 1);
+      for (; i <= end; i += 1) {
+        if (!runStep(i)) break;
+      }
+
+      scopes.forEach((scope) => {
+        const state = blockState.get(scope.id);
+        if (!state?.scopeSeries) return;
+        drawScope(scope, time, state.scopeSeries, state.scopeConnected || []);
+      });
+      xyScopes.forEach((scope) => {
+        const state = blockState.get(scope.id);
+        if (!state?.xySeries) return;
+        drawXYScope(scope, state.xySeries, state.xyConnected || []);
+      });
+
+      if (algebraicLoopFailed) break;
+      const doneRatio = samples <= 0 ? 1 : Math.min(1, i / (samples + 1));
+      statusEl.textContent = `Running... ${Math.round(doneRatio * 100)}%`;
+      await new Promise((resolve) => window.requestAnimationFrame(() => resolve()));
+    }
+  } else {
+    for (let i = 0; i <= samples; i += 1) {
+      if (!runStep(i)) break;
+    }
   }
 
   if (algebraicLoopFailed) {

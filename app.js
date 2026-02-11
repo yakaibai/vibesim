@@ -1511,7 +1511,27 @@ function init() {
     });
   }
 
-  const handleRun = () => simulate({ state, runtimeInput, statusEl, downloadFile });
+  let runInProgress = false;
+  const setRunButtonsDisabled = (disabled) => {
+    if (runButtons.length) {
+      runButtons.forEach((button) => {
+        button.disabled = disabled;
+      });
+    } else if (runBtn) {
+      runBtn.disabled = disabled;
+    }
+  };
+  const handleRun = async () => {
+    if (runInProgress) return;
+    runInProgress = true;
+    setRunButtonsDisabled(true);
+    try {
+      await simulate({ state, runtimeInput, statusEl, downloadFile });
+    } finally {
+      runInProgress = false;
+      setRunButtonsDisabled(false);
+    }
+  };
   const refreshSelectedScopeInspector = () => {
     const selected = state.selectedId ? state.blocks.get(state.selectedId) : null;
     if (!selected || (selected.type !== "scope" && selected.type !== "xyScope")) return;
