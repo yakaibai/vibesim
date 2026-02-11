@@ -446,6 +446,9 @@ body[data-theme="noir-cyan"] {
   display: flex;
   flex-direction: column;
   gap: 8px;
+  min-height: 0;
+  overflow: auto;
+  -webkit-overflow-scrolling: touch;
 }
 
 .button-stack {
@@ -1421,6 +1424,12 @@ body.is-root-diagram #subsystemUpBtn {
   }
 
   .panel-carousel .variables-panel {
+    overflow: auto;
+    touch-action: pan-y;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .panel-carousel .examples-panel {
     overflow: auto;
     touch-action: pan-y;
     -webkit-overflow-scrolling: touch;

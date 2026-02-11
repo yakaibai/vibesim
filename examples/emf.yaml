@@ -217,7 +217,7 @@ connections:
     to: b15
     fromIndex: 0
     toIndex: 0
-    points: [[2130,1650],[2220,1650],[2220,1550],[2260,1550]]
+    points: [[2130,1650],[2230,1650],[2230,1550],[2260,1550]]
   -
     from: b7
     to: b8
@@ -229,7 +229,7 @@ connections:
     to: b14
     fromIndex: 0
     toIndex: 2
-    points: [[2400,2280],[2650,2280],[2650,2180],[2690,2180]]
+    points: [[2400,2280],[2690,2280]]
   -
     from: b7
     to: b17
@@ -253,7 +253,7 @@ connections:
     to: b14
     fromIndex: 0
     toIndex: 1
-    points: [[2400,2190],[2620,2190],[2620,2140],[2690,2140]]
+    points: [[2400,2190],[2690,2190]]
   -
     from: b18
     to: b4

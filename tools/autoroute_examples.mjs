@@ -24,6 +24,12 @@ const dummyHelpers = {
 
 const templates = buildBlockTemplates(dummyHelpers);
 
+const snap = (value) => Math.round(Number(value || 0) / GRID_SIZE) * GRID_SIZE;
+const clampScopeSize = (width, height) => ({
+  width: Math.max(160, snap(Number.isFinite(width) ? width : 160)),
+  height: Math.max(120, snap(Number.isFinite(height) ? height : 120)),
+});
+
 function parseYAML(text) {
   const lines = text
     .split(/\r?\n/)
@@ -267,9 +273,25 @@ function materializeBlock(blockData) {
 
   if (Number.isFinite(Number(params.width)) && Number(params.width) > 0) block.width = Number(params.width);
   if (Number.isFinite(Number(params.height)) && Number(params.height) > 0) block.height = Number(params.height);
+  if (block.type === "scope" || block.type === "xyScope") {
+    const clamped = clampScopeSize(block.width, block.height);
+    block.width = clamped.width;
+    block.height = clamped.height;
+    params.width = clamped.width;
+    params.height = clamped.height;
+  }
   if (typeof template.resize === "function") template.resize(block);
 
-  const inputs = Array.isArray(block.dynamicInputs) ? block.dynamicInputs : (template.inputs || []);
+  let inputs = Array.isArray(block.dynamicInputs) ? block.dynamicInputs : (template.inputs || []);
+  if (block.type === "scope" || block.type === "xyScope") {
+    const count = Array.isArray(inputs) ? inputs.length : 0;
+    const top = 40;
+    const bottom = Math.max(top, block.height - 40);
+    inputs = Array.from({ length: count }, (_, index) => {
+      const t = count > 1 ? index / (count - 1) : 0.5;
+      return { x: 0, y: snap(top + (bottom - top) * t), side: "left" };
+    });
+  }
   const outputs = Array.isArray(block.dynamicOutputs) ? block.dynamicOutputs : (template.outputs || []);
   inputs.forEach((port, index) => {
     block.ports.push({ type: "in", index, x: port.x, y: port.y, side: port.side });

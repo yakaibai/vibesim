@@ -7,6 +7,8 @@ import { diagramToFRD } from "./control/diagram.js";
 import { blockLibrary } from "./blocks/index.js";
 import { createInspector } from "./blocks/inspector.js";
 import { evalExpression } from "./utils/expr.js";
+import { captureRoutePointsSnapshot, applyRoutePointsSnapshot } from "./utils/route-points.js";
+import { collectExternalPorts, stabilizeExternalPortOrder, externalPortsChanged } from "./utils/subsystem-ports.js";
 import { GRID_SIZE } from "./geometry.js";
 
 const svg = document.getElementById("svgCanvas");
@@ -144,6 +146,7 @@ const state = {
   loadingDiagram: false,
   loadedSubsystems: new Map(),
   subsystemStack: [],
+  routeEpoch: 0,
 };
 
 let fitToDiagram = () => {};
@@ -158,11 +161,7 @@ const connectionKey = (conn) =>
   `${conn.from}:${Number(conn.fromIndex ?? 0)}->${conn.to}:${Number(conn.toIndex ?? 0)}`;
 
 const captureUiState = () => {
-  const routePoints = {};
-  state.connections.forEach((conn) => {
-    if (!Array.isArray(conn.points) || conn.points.length < 2) return;
-    routePoints[connectionKey(conn)] = conn.points.map((pt) => ({ x: Number(pt.x), y: Number(pt.y) }));
-  });
+  const routePoints = captureRoutePointsSnapshot(state.connections, connectionKey);
   const scopeState = {};
   state.blocks.forEach((block) => {
     if (block.type === "scope" && block.scopeData) {
@@ -179,14 +178,8 @@ const buildSubsystemSpec = (data, fallbackName = "Subsystem") => {
   const connections = Array.isArray(data?.connections) ? deepClone(data.connections) : [];
   if (!blocks.length) throw new Error("Subsystem YAML has no blocks");
   const name = String(data?.name || fallbackName).trim() || fallbackName;
-  const externalInputs = blocks
-    .filter((b) => b?.type === "labelSource" && b?.params?.isExternalPort === true)
-    .sort((a, b) => (Number(a?.y) || 0) - (Number(b?.y) || 0))
-    .map((b) => ({ id: b.id, name: String(b?.params?.name || b.id) }));
-  const externalOutputs = blocks
-    .filter((b) => b?.type === "labelSink" && b?.params?.isExternalPort === true)
-    .sort((a, b) => (Number(a?.y) || 0) - (Number(b?.y) || 0))
-    .map((b) => ({ id: b.id, name: String(b?.params?.name || b.id) }));
+  const externalInputs = collectExternalPorts(blocks, "labelSource");
+  const externalOutputs = collectExternalPorts(blocks, "labelSink");
   if (!externalInputs.length && !externalOutputs.length) {
     throw new Error("No external ports found. Mark label blocks with 'Is external port'");
   }
@@ -231,7 +224,7 @@ function openSubsystemFromBlock(block) {
       sampleTime: Number(snapshot.sampleTime) || state.sampleTime || 0.01,
       runtime: Number(snapshot.runtime) || Number(runtimeInput?.value) || 1,
     },
-    { preserveSubsystemStack: true, restoreUiState: deepClone(spec.uiState || null) }
+    { preserveSubsystemStack: true }
   );
   renderer.selectBlock(null);
   renderInspector(null);
@@ -242,7 +235,6 @@ function closeSubsystemView() {
   if (!state.subsystemStack.length) return;
   const innerSnapshot = serializeDiagram(state);
   const entry = state.subsystemStack.pop();
-  const innerUiState = captureUiState();
   loadDiagram(entry.parentDiagram, {
     preserveSubsystemStack: true,
     restoreUiState: deepClone(entry.parentUiState || null),
@@ -264,11 +256,16 @@ function closeSubsystemView() {
         `Returned to parent (warning: ${error?.message || "invalid subsystem external ports"})`;
     }
     host.params.subsystem = deepClone(spec);
-    host.params.subsystem.uiState = deepClone(innerUiState);
-    host.params.externalInputs = deepClone(spec.externalInputs || []);
-    host.params.externalOutputs = deepClone(spec.externalOutputs || []);
+    const nextInputs = stabilizeExternalPortOrder(spec.externalInputs || [], host.params?.externalInputs || []);
+    const nextOutputs = stabilizeExternalPortOrder(spec.externalOutputs || [], host.params?.externalOutputs || []);
+    const inputsChanged = externalPortsChanged(host.params?.externalInputs || [], nextInputs);
+    const outputsChanged = externalPortsChanged(host.params?.externalOutputs || [], nextOutputs);
+    host.params.externalInputs = deepClone(nextInputs);
+    host.params.externalOutputs = deepClone(nextOutputs);
     if (!host.params.name) host.params.name = spec.name;
-    renderer.updateBlockLabel(host);
+    if (inputsChanged || outputsChanged) {
+      renderer.updateBlockLabel(host);
+    }
     renderer.selectBlock(host.id);
     renderInspector(host);
     signalDiagramChanged();
@@ -624,6 +621,7 @@ function serializeDiagram(state) {
 }
 
 function loadDiagram(data, options = {}) {
+  state.routeEpoch = (Number(state.routeEpoch) || 0) + 1;
   const preserveSubsystemStack = Boolean(options?.preserveSubsystemStack);
   const restoreUiState = options?.restoreUiState && typeof options.restoreUiState === "object"
     ? options.restoreUiState
@@ -673,8 +671,19 @@ function loadDiagram(data, options = {}) {
     pointQueuesByKey.set(key, queue);
   };
   const parsePoints = (rawPoints) => {
-    if (!Array.isArray(rawPoints)) return [];
-    const parsed = rawPoints
+    let pointsValue = rawPoints;
+    if (typeof pointsValue === "string") {
+      const trimmed = pointsValue.trim();
+      if (trimmed.startsWith("[") && trimmed.endsWith("]")) {
+        try {
+          pointsValue = JSON.parse(trimmed);
+        } catch {
+          pointsValue = rawPoints;
+        }
+      }
+    }
+    if (!Array.isArray(pointsValue)) return [];
+    const parsed = pointsValue
       .map((pt) => {
         if (Array.isArray(pt) && pt.length >= 2) {
           return { x: Number(pt[0]), y: Number(pt[1]) };
@@ -735,14 +744,7 @@ function loadDiagram(data, options = {}) {
   });
 
   if (restoreUiState?.routePoints && typeof restoreUiState.routePoints === "object") {
-    state.connections.forEach((conn) => {
-      const key = connectionKey(conn);
-      const pts = restoreUiState.routePoints[key];
-      if (!Array.isArray(pts) || pts.length < 2) return;
-      conn.points = pts
-        .map((pt) => ({ x: Number(pt?.x), y: Number(pt?.y) }))
-        .filter((pt) => Number.isFinite(pt.x) && Number.isFinite(pt.y));
-    });
+    applyRoutePointsSnapshot(state.connections, restoreUiState.routePoints, connectionKey);
   }
 
   if (restoreUiState?.scopeState && typeof restoreUiState.scopeState === "object") {
@@ -766,21 +768,25 @@ function loadDiagram(data, options = {}) {
     state.routingDirty = false;
     if (state.dirtyBlocks) state.dirtyBlocks.clear();
     if (state.dirtyConnections) state.dirtyConnections.clear();
-    if (renderer.renderCurrentWirePaths) renderer.renderCurrentWirePaths();
+    if (renderer.renderCurrentWirePaths) renderer.renderCurrentWirePaths(true);
     if (typeof updateStabilityPanel === "function") updateStabilityPanel();
   } else if (loadedPointCount > 0) {
     state.fastRouting = false;
     state.routingDirty = false;
     if (state.dirtyBlocks) state.dirtyBlocks.clear();
     if (state.dirtyConnections) state.dirtyConnections.clear();
-    if (renderer.renderCurrentWirePaths) renderer.renderCurrentWirePaths();
+    if (renderer.renderCurrentWirePaths) renderer.renderCurrentWirePaths(true);
     const shouldAutoRoute = state.autoRoute || hasConnectionsWithoutPoints;
     if (shouldAutoRoute) {
+      // Ensure one visible frame uses saved points before running full autoroute.
       requestAnimationFrame(() => {
-        setTimeout(() => {
-          renderer.forceFullRoute(FORCE_FULL_ROUTE_TIME_LIMIT_MS);
-          if (typeof updateStabilityPanel === "function") updateStabilityPanel();
-        }, 0);
+        if (renderer.renderCurrentWirePaths) renderer.renderCurrentWirePaths(true);
+        requestAnimationFrame(() => {
+          setTimeout(() => {
+            renderer.forceFullRoute(FORCE_FULL_ROUTE_TIME_LIMIT_MS);
+            if (typeof updateStabilityPanel === "function") updateStabilityPanel();
+          }, 0);
+        });
       });
     } else if (typeof updateStabilityPanel === "function") {
       updateStabilityPanel();

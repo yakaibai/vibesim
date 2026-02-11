@@ -146,5 +146,5 @@ connections:
     to: b10
     fromIndex: 0
     toIndex: 1
-    points: [[2180,1770],[2230,1770],[2230,1690],[2270,1690]]
+    points: [[2180,1770],[2270,1770]]
 variables: "m=1\ng=9.81\nI=m\nmg=m*g\nk=1"

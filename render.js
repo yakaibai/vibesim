@@ -9,6 +9,7 @@ import { renderScope } from "./sim.js";
 import { buildBlockTemplates } from "./blocks/index.js";
 import { computeSubsystemPortLabelFrame } from "./blocks/utility.js";
 import { exprToLatex, estimateLatexWidth } from "./utils/expr.js";
+import { buildConnectionSignature, canApplyWorkerRoutes } from "./utils/route-worker-guard.js";
 import {
   rotatePoint,
   getRotatedBounds,
@@ -951,6 +952,8 @@ export function createRenderer({
       }
       const jobId = ++fullRouteSeq;
       const snapshot = buildRoutingSnapshot();
+      const jobEpoch = Number(state.routeEpoch || 0);
+      const jobSignature = buildConnectionSignature(snapshot.connections);
       const worldW = Number(svg.dataset.worldWidth) || svg.clientWidth || 1;
       const worldH = Number(svg.dataset.worldHeight) || svg.clientHeight || 1;
       const onMessage = (event) => {
@@ -962,7 +965,17 @@ export function createRenderer({
           reject(new Error(data.error || "route_worker_failed"));
           return;
         }
-        if (jobId < latestFullRouteApplied) {
+        const currentEpoch = Number(state.routeEpoch || 0);
+        const currentSignature = buildConnectionSignature(state.connections);
+        const validForCurrentState = canApplyWorkerRoutes({
+          jobEpoch,
+          currentEpoch,
+          jobSignature,
+          currentSignature,
+          routes: data.routes,
+          connectionCount: state.connections.length,
+        });
+        if (jobId < latestFullRouteApplied || !validForCurrentState) {
           resolve({ stale: true });
           return;
         }
@@ -1980,16 +1993,22 @@ export function createRenderer({
     path.addEventListener("click", onSelect);
     hitPath.addEventListener("click", onSelect);
     state.connections.push(conn);
-    conn.points = buildFastDragPathFromPorts(conn);
-    applyWirePathsFast(new Set([conn]));
-    state.routingDirty = true;
-    if (state.dirtyConnections) state.dirtyConnections.add(conn);
-    if (state.autoRoute !== false && !state.loadingDiagram) {
-      queueRouteAfterPreview();
+    if (state.loadingDiagram) {
+      // During load, defer any provisional routing until all saved points are attached.
+      conn.path.setAttribute("d", "");
+      if (conn.hitPath) conn.hitPath.setAttribute("d", "");
     } else {
-      state.routingDirty = false;
-      applyWirePaths(new Map());
-      updateWireCornerHandles();
+      conn.points = buildFastDragPathFromPorts(conn);
+      applyWirePathsFast(new Set([conn]));
+      state.routingDirty = true;
+      if (state.dirtyConnections) state.dirtyConnections.add(conn);
+      if (state.autoRoute !== false) {
+        queueRouteAfterPreview();
+      } else {
+        state.routingDirty = false;
+        applyWirePaths(new Map());
+        updateWireCornerHandles();
+      }
     }
     if (typeof window !== "undefined") {
       window.dispatchEvent(new CustomEvent("diagramChanged"));
@@ -2204,7 +2223,8 @@ export function createRenderer({
     }
   }
 
-  function applyWirePaths(paths) {
+  function applyWirePaths(paths, options = {}) {
+    const preservePathShape = Boolean(options?.preservePathShape);
     const segmentMap = new Map();
     const hopClaims = new Map();
     let overlapCount = 0;
@@ -2224,12 +2244,14 @@ export function createRenderer({
         conn.path.setAttribute("marker-end", "url(#wire-arrow)");
       }
       const routedPoints = state.fastRouting ? buildDragRenderPoints(conn, points) : points;
-      const stubbedPoints = enforcePortStubs(conn, routedPoints);
-      if (stubbedPoints !== routedPoints) {
-        conn.points = stubbedPoints;
+      const workingPoints = preservePathShape ? routedPoints : enforcePortStubs(conn, routedPoints);
+      if (!preservePathShape && workingPoints !== routedPoints) {
+        conn.points = workingPoints;
       }
-      let finalPoints = simplifyOrthogonalPath(applyWireOffsets(conn, stubbedPoints));
-      finalPoints = tryShorterOrthogonalPath(conn, finalPoints);
+      let finalPoints = preservePathShape
+        ? applyWireOffsets(conn, workingPoints)
+        : simplifyOrthogonalPath(applyWireOffsets(conn, workingPoints));
+      if (!preservePathShape) finalPoints = tryShorterOrthogonalPath(conn, finalPoints);
       const segments = buildSegments(finalPoints, conn);
       if (DEBUG_WIRE_CHECKS && debugLog && finalPoints.length > 1 && segments.length === 0) {
         writeDebug(debugLog, `[wire ${conn.from}->${conn.to}] no segments for render points`);
@@ -2252,12 +2274,14 @@ export function createRenderer({
         conn.routeFailed = false;
       }
       const routedPoints = state.fastRouting ? buildDragRenderPoints(conn, points) : points;
-      const stubbedPoints = enforcePortStubs(conn, routedPoints);
-      if (stubbedPoints !== routedPoints) {
-        conn.points = stubbedPoints;
+      const workingPoints = preservePathShape ? routedPoints : enforcePortStubs(conn, routedPoints);
+      if (!preservePathShape && workingPoints !== routedPoints) {
+        conn.points = workingPoints;
       }
-      let finalPoints = simplifyOrthogonalPath(applyWireOffsets(conn, stubbedPoints));
-      finalPoints = tryShorterOrthogonalPath(conn, finalPoints);
+      let finalPoints = preservePathShape
+        ? applyWireOffsets(conn, workingPoints)
+        : simplifyOrthogonalPath(applyWireOffsets(conn, workingPoints));
+      if (!preservePathShape) finalPoints = tryShorterOrthogonalPath(conn, finalPoints);
       if (!finalPoints.length || hasInvalidPoint(finalPoints)) {
         if (DEBUG_WIRE_CHECKS && debugLog) {
           const bad = hasInvalidPoint(finalPoints);
@@ -4182,8 +4206,8 @@ export function createRenderer({
     updateSelectionBox,
     clientToSvg,
     forceFullRoute,
-    renderCurrentWirePaths: () => {
-      applyWirePaths(new Map());
+    renderCurrentWirePaths: (preservePathShape = false) => {
+      applyWirePaths(new Map(), { preservePathShape });
       updateSelectionBox();
       refreshDebugLog();
     },
