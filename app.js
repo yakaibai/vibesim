@@ -915,108 +915,119 @@ function parseYAML(text) {
     return raw;
   };
 
-  const nextNonEmpty = (start) => {
-    for (let i = start; i < lines.length; i += 1) {
-      if (lines[i]) return lines[i];
+  const isArrayLine = (line) => line && (line.text === "-" || line.text.startsWith("- "));
+  const peek = () => lines[index] || null;
+  const splitKeyValue = (textLine) => {
+    let splitAt = -1;
+    for (let i = 0; i < textLine.length; i += 1) {
+      if (textLine[i] !== ":") continue;
+      const next = textLine[i + 1];
+      if (next === undefined || /\s/.test(next)) {
+        splitAt = i;
+        break;
+      }
     }
-    return null;
+    if (splitAt < 0) splitAt = textLine.indexOf(":");
+    if (splitAt < 0) return { key: "", valueRaw: "" };
+    return {
+      key: textLine.slice(0, splitAt).trim(),
+      valueRaw: textLine.slice(splitAt + 1).trim(),
+    };
   };
 
-  const parseBlock = (indentLevel) => {
-    const current = lines[index];
-    if (!current) return { value: null, next: index };
-    if (current.text.startsWith("- ") || current.text === "-") return parseArray(indentLevel);
+  const parseNode = (indentLevel) => {
+    const line = peek();
+    if (!line || line.indent < indentLevel) return null;
+    if (isArrayLine(line)) return parseArray(indentLevel);
     return parseObject(indentLevel);
+  };
+
+  const parseObjectEntryInto = (obj, indentLevel) => {
+    const line = peek();
+    if (!line || line.indent !== indentLevel || isArrayLine(line) || !line.text.includes(":")) {
+      return false;
+    }
+    const { key, valueRaw } = splitKeyValue(line.text);
+    index += 1;
+    if (!key || key === "{}") return true;
+    if (valueRaw) {
+      obj[key] = parseScalar(valueRaw);
+      return true;
+    }
+    const next = peek();
+    if (!next || next.indent <= indentLevel) {
+      obj[key] = null;
+      return true;
+    }
+    obj[key] = parseNode(next.indent);
+    return true;
+  };
+
+  const parseInlineArrayObject = (text, childIndent) => {
+    const obj = {};
+    const { key, valueRaw } = splitKeyValue(text);
+    if (key && key !== "{}") {
+      if (valueRaw) {
+        obj[key] = parseScalar(valueRaw);
+      } else {
+        const next = peek();
+        if (!next || next.indent <= childIndent - 2) obj[key] = null;
+        else obj[key] = parseNode(next.indent);
+      }
+    }
+    while (true) {
+      const next = peek();
+      if (!next || next.indent < childIndent) break;
+      if (next.indent === childIndent - 2 && isArrayLine(next)) break;
+      if (next.indent !== childIndent) break;
+      if (isArrayLine(next)) break;
+      if (!next.text.includes(":")) {
+        index += 1;
+        continue;
+      }
+      parseObjectEntryInto(obj, childIndent);
+    }
+    return obj;
   };
 
   const parseArray = (indentLevel) => {
     const arr = [];
-    while (index < lines.length) {
-      const line = lines[index];
-      if (line.indent < indentLevel || !(line.text.startsWith("- ") || line.text === "-")) break;
+    while (true) {
+      const line = peek();
+      if (!line || line.indent !== indentLevel || !isArrayLine(line)) break;
       const itemText = line.text === "-" ? "" : line.text.slice(2).trim();
+      index += 1;
       if (!itemText) {
-        index += 1;
-        const next = nextNonEmpty(index);
-        if (next && next.indent > line.indent) {
-          const parsed = parseBlock(line.indent + 2);
-          arr.push(parsed.value);
-          index = parsed.next;
-        } else {
-          arr.push(null);
-        }
+        const next = peek();
+        if (!next || next.indent <= indentLevel) arr.push(null);
+        else arr.push(parseNode(next.indent));
         continue;
       }
       if (itemText.includes(":")) {
-        const [rawKey, ...rest] = itemText.split(":");
-        const key = rawKey.trim();
-        const valueRaw = rest.join(":").trim();
-        const obj = {};
-        if (valueRaw) {
-          obj[key] = parseScalar(valueRaw);
-          index += 1;
-        } else {
-          index += 1;
-          const next = nextNonEmpty(index);
-          if (next && next.indent > line.indent) {
-            const parsed = parseBlock(line.indent + 2);
-            obj[key] = parsed.value;
-            index = parsed.next;
-          } else {
-            obj[key] = null;
-          }
-        }
-        const nextLine = nextNonEmpty(index);
-        if (nextLine && nextLine.indent > line.indent) {
-          const parsed = parseObject(line.indent + 2);
-          Object.assign(obj, parsed.value);
-          index = parsed.next;
-        }
-        arr.push(obj);
+        arr.push(parseInlineArrayObject(itemText, indentLevel + 2));
         continue;
       }
       arr.push(parseScalar(itemText));
-      index += 1;
     }
-    return { value: arr, next: index };
+    return arr;
   };
 
   const parseObject = (indentLevel) => {
     const obj = {};
-    while (index < lines.length) {
-      const line = lines[index];
-      if (line.indent < indentLevel || line.text.startsWith("- ") || line.text === "-") break;
+    while (true) {
+      const line = peek();
+      if (!line || line.indent !== indentLevel || isArrayLine(line)) break;
       if (!line.text.includes(":")) {
         index += 1;
         continue;
       }
-      const [rawKey, ...rest] = line.text.split(":");
-      const key = rawKey.trim();
-      const valueRaw = rest.join(":").trim();
-      if (!key || key === "{}") {
-        index += 1;
-        continue;
-      }
-      if (!valueRaw) {
-        index += 1;
-        const next = nextNonEmpty(index);
-        if (next && next.indent > line.indent) {
-          const parsed = parseBlock(line.indent + 2);
-          obj[key] = parsed.value;
-          index = parsed.next;
-        } else {
-          obj[key] = null;
-        }
-      } else {
-        obj[key] = parseScalar(valueRaw);
-        index += 1;
-      }
+      parseObjectEntryInto(obj, indentLevel);
     }
-    return { value: obj, next: index };
+    return obj;
   };
 
-  const parsed = parseObject(0);
-  return parsed.value;
+  const parsed = parseNode(0);
+  return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
 }
 
 function init() {
