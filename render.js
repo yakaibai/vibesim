@@ -884,11 +884,13 @@ export function createRenderer({
   onSelectBlock,
   onSelectConnection,
   onOpenSubsystem,
+  onConnectionError,
 }) {
   let routeAfterPreviewScheduled = false;
   let fullRouteWorker = null;
   let fullRouteSeq = 0;
   let latestFullRouteApplied = 0;
+  let lastConnectionError = null;
 
   const buildRoutingSnapshot = () => ({
     blocks: Array.from(state.blocks.values()).map((block) => ({
@@ -1979,7 +1981,21 @@ export function createRenderer({
   }
 
   function createConnection(fromId, toId, toIndex, fromIndex = 0) {
-    if (state.connections.some((c) => c.from === fromId && c.to === toId && c.toIndex === toIndex && c.fromIndex === fromIndex)) return;
+    lastConnectionError = null;
+    const duplicate = state.connections.find(
+      (c) => c.from === fromId && c.to === toId && c.toIndex === toIndex && c.fromIndex === fromIndex
+    );
+    if (duplicate) {
+      lastConnectionError = { reason: "duplicate", message: "Connection already exists." };
+      return null;
+    }
+    const occupied = state.connections.find((c) => c.to === toId && Number(c.toIndex ?? 0) === Number(toIndex ?? 0));
+    if (occupied) {
+      const message = `Input ${toId}.in${Number(toIndex ?? 0)} already has a connection from ${occupied.from}.out${Number(occupied.fromIndex ?? 0)}.`;
+      lastConnectionError = { reason: "input_occupied", message };
+      if (typeof onConnectionError === "function") onConnectionError(message);
+      return null;
+    }
 
     const path = createSvgElement("path", { class: "wire", "marker-end": "url(#wire-arrow)" });
     const hitPath = createSvgElement("path", { class: "wire-hit" });
@@ -2013,6 +2029,7 @@ export function createRenderer({
     if (typeof window !== "undefined") {
       window.dispatchEvent(new CustomEvent("diagramChanged"));
     }
+    return conn;
   }
 
   function updateConnections(force = false) {
@@ -4213,5 +4230,6 @@ export function createRenderer({
     },
     resizeBlock,
     setLoopHighlight,
+    getLastConnectionError: () => lastConnectionError,
   };
 }

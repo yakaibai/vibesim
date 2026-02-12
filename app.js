@@ -487,6 +487,9 @@ const renderer = createRenderer({
   onOpenSubsystem: (block) => {
     openSubsystemFromBlock(block);
   },
+  onConnectionError: (message) => {
+    if (statusEl) statusEl.textContent = message;
+  },
 });
 
 renderInspector = createInspector({
@@ -773,7 +776,19 @@ function loadDiagram(data, options = {}) {
     if (!conn) return;
     if (!state.blocks.has(conn.from) || !state.blocks.has(conn.to)) return;
     const beforeLen = state.connections.length;
-    renderer.createConnection(conn.from, conn.to, conn.toIndex ?? 0, conn.fromIndex ?? 0);
+    const createdConn = renderer.createConnection(conn.from, conn.to, conn.toIndex ?? 0, conn.fromIndex ?? 0);
+    if (!createdConn) {
+      const createdError = typeof renderer.getLastConnectionError === "function"
+        ? renderer.getLastConnectionError()
+        : null;
+      if (createdError?.reason === "input_occupied") {
+        throw new Error(
+          `Invalid diagram: multiple outputs connected to ${conn.to}.in${Number(conn.toIndex ?? 0)}.`
+        );
+      }
+      if (createdError?.reason === "duplicate") return;
+      throw new Error(createdError?.message || "Invalid connection in loaded diagram.");
+    }
     if (state.connections.length <= beforeLen) return;
     const created = state.connections[state.connections.length - 1];
     const key = connectionKey(created);
