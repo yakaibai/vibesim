@@ -147,6 +147,7 @@ const state = {
   loadedSubsystems: new Map(),
   subsystemStack: [],
   routeEpoch: 0,
+  spawnIndex: 0,
 };
 
 let fitToDiagram = () => {};
@@ -156,6 +157,43 @@ const signalDiagramChanged = () => {
 };
 
 const deepClone = (value) => JSON.parse(JSON.stringify(value));
+
+const spawnOffsetForIndex = (index) => {
+  if (index <= 0) return { x: 0, y: 0 };
+  const step = GRID_SIZE * 4;
+  let ring = 1;
+  let ringCapacity = 8;
+  let remaining = index;
+  while (remaining > ringCapacity) {
+    remaining -= ringCapacity;
+    ring += 1;
+    ringCapacity = 8 * ring;
+  }
+  const sideLen = 2 * ring;
+  const segment = Math.floor((remaining - 1) / sideLen);
+  const pos = (remaining - 1) % sideLen;
+  let x = 0;
+  let y = 0;
+  switch (segment) {
+    case 0:
+      x = -ring + pos + 1;
+      y = -ring;
+      break;
+    case 1:
+      x = ring;
+      y = -ring + pos + 1;
+      break;
+    case 2:
+      x = ring - pos - 1;
+      y = ring;
+      break;
+    default:
+      x = -ring;
+      y = ring - pos - 1;
+      break;
+  }
+  return { x: x * step, y: y * step };
+};
 
 const connectionKey = (conn) =>
   `${conn.from}:${Number(conn.fromIndex ?? 0)}->${conn.to}:${Number(conn.toIndex ?? 0)}`;
@@ -561,6 +599,7 @@ const parseVariables = (text) => {
 
 function clearWorkspace() {
   renderer.clearWorkspace();
+  state.spawnIndex = 0;
   statusEl.textContent = "Idle";
   inspectorBody.textContent = "Select a block or wire.";
 }
@@ -658,6 +697,7 @@ function loadDiagram(data, options = {}) {
     updateSubsystemNavUi();
   }
   renderer.clearWorkspace();
+  state.spawnIndex = 0;
   state.loadingDiagram = true;
   state.routingDirty = false;
   state.dirtyBlocks.clear();
@@ -1483,9 +1523,9 @@ function init() {
       if (!button) return;
       const type = button.dataset.type;
       const subsystemKey = button.dataset.subsystemKey || "";
-      const offset = state.blocks.size * 20;
       const centerX = viewBox.x + viewBox.w / 2;
       const centerY = viewBox.y + viewBox.h / 2;
+      const offset = spawnOffsetForIndex(state.spawnIndex++);
       try {
         const options = {};
         if (type === "subsystem" && subsystemKey) {
@@ -1498,7 +1538,7 @@ function init() {
             subsystem: deepClone(spec),
           };
         }
-        renderer.createBlock(type, centerX + offset, centerY + offset, options);
+        renderer.createBlock(type, centerX + offset.x, centerY + offset.y, options);
         statusEl.textContent = `Added ${type}`;
         updateStabilityPanel();
       } catch (error) {
