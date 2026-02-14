@@ -606,6 +606,135 @@ export function buildPathWithHops(segments, otherSegments, hopClaims = null) {
   return commands.join(" ");
 }
 
+function samePoint(a, b) {
+  return Boolean(a && b && a.x === b.x && a.y === b.y);
+}
+
+function pointKey(point) {
+  return `${point.x},${point.y}`;
+}
+
+function normalizeWirePoints(points) {
+  if (!Array.isArray(points)) return [];
+  const out = [];
+  points.forEach((pt) => {
+    const x = Number(pt?.x ?? pt?.[0]);
+    const y = Number(pt?.y ?? pt?.[1]);
+    if (!Number.isFinite(x) || !Number.isFinite(y)) return;
+    const next = { x, y };
+    if (!out.length || !samePoint(out[out.length - 1], next)) {
+      out.push(next);
+    }
+  });
+  return out;
+}
+
+function segmentVector(from, to) {
+  if (!from || !to) return null;
+  const dxRaw = to.x - from.x;
+  const dyRaw = to.y - from.y;
+  if (dxRaw === 0 && dyRaw === 0) return null;
+  if (dxRaw !== 0 && dyRaw !== 0) return null;
+  if (dxRaw !== 0) {
+    return { dx: Math.sign(dxRaw), dy: 0, len: Math.abs(dxRaw) };
+  }
+  return { dx: 0, dy: Math.sign(dyRaw), len: Math.abs(dyRaw) };
+}
+
+function firstSplitPointFromSource(pathA, pathB) {
+  const a = normalizeWirePoints(pathA);
+  const b = normalizeWirePoints(pathB);
+  if (a.length < 2 || b.length < 2) return null;
+  if (!samePoint(a[0], b[0])) return null;
+
+  let ia = 0;
+  let ib = 0;
+  let pos = { ...a[0] };
+  let progressed = 0;
+
+  while (ia < a.length - 1 && ib < b.length - 1) {
+    while (ia < a.length - 1 && samePoint(pos, a[ia + 1])) ia += 1;
+    while (ib < b.length - 1 && samePoint(pos, b[ib + 1])) ib += 1;
+    if (ia >= a.length - 1 || ib >= b.length - 1) break;
+
+    const va = segmentVector(pos, a[ia + 1]);
+    const vb = segmentVector(pos, b[ib + 1]);
+    if (!va || !vb) break;
+
+    if (va.dx !== vb.dx || va.dy !== vb.dy) {
+      return progressed > 0 ? { ...pos } : null;
+    }
+
+    const step = Math.min(va.len, vb.len);
+    if (!(step > 0)) break;
+    pos = { x: pos.x + va.dx * step, y: pos.y + va.dy * step };
+    progressed += step;
+
+    const endA = samePoint(pos, a[ia + 1]);
+    const endB = samePoint(pos, b[ib + 1]);
+    if (endA) ia += 1;
+    if (endB) ib += 1;
+
+    const hasNextA = ia < a.length - 1;
+    const hasNextB = ib < b.length - 1;
+    if (!hasNextA && !hasNextB) return null;
+    if (!hasNextA || !hasNextB) {
+      return progressed > 0 ? { ...pos } : null;
+    }
+
+    const nextA = segmentVector(pos, a[ia + 1]);
+    const nextB = segmentVector(pos, b[ib + 1]);
+    if (!nextA || !nextB) break;
+
+    if (endA && !endB) {
+      if (nextA.dx !== va.dx || nextA.dy !== va.dy) {
+        return progressed > 0 ? { ...pos } : null;
+      }
+      continue;
+    }
+    if (!endA && endB) {
+      if (nextB.dx !== va.dx || nextB.dy !== va.dy) {
+        return progressed > 0 ? { ...pos } : null;
+      }
+      continue;
+    }
+    if (nextA.dx !== nextB.dx || nextA.dy !== nextB.dy) {
+      return progressed > 0 ? { ...pos } : null;
+    }
+  }
+  return null;
+}
+
+export function collectSharedSourceSplitPoints(connections = [], getPoints = null) {
+  const groups = new Map();
+  connections.forEach((conn) => {
+    if (!conn) return;
+    const raw = typeof getPoints === "function" ? getPoints(conn) : conn.points;
+    const pts = normalizeWirePoints(raw);
+    if (pts.length < 2) return;
+    const sourceKey = `${conn.from}:${Number(conn.fromIndex ?? 0)}`;
+    const list = groups.get(sourceKey) || [];
+    list.push(pts);
+    groups.set(sourceKey, list);
+  });
+
+  const splitSet = new Set();
+  groups.forEach((paths) => {
+    if (paths.length < 2) return;
+    for (let i = 0; i < paths.length; i += 1) {
+      for (let j = i + 1; j < paths.length; j += 1) {
+        const split = firstSplitPointFromSource(paths[i], paths[j]);
+        if (split) splitSet.add(pointKey(split));
+      }
+    }
+  });
+
+  return Array.from(splitSet).map((key) => {
+    const [x, y] = key.split(",").map(Number);
+    return { x, y };
+  });
+}
+
 function renderRectBlock(block, title, lines = [], iconType = null) {
   const group = block.group;
   group.appendChild(svgRect(0, 0, block.width, block.height, "block-body"));
@@ -1086,6 +1215,8 @@ export function createRenderer({
     display: "none",
   });
   overlayLayer.appendChild(marqueeRect);
+  const wireJunctionLayer = createSvgElement("g", { class: "wire-junction-layer" });
+  overlayLayer.appendChild(wireJunctionLayer);
   const wireCornerLayer = createSvgElement("g", { class: "wire-corner-layer" });
   overlayLayer.appendChild(wireCornerLayer);
   const wireCornerDrag = {
@@ -1097,6 +1228,30 @@ export function createRenderer({
 
   function clearWireCornerHandles() {
     while (wireCornerLayer.firstChild) wireCornerLayer.removeChild(wireCornerLayer.firstChild);
+  }
+
+  function clearWireJunctionDots() {
+    while (wireJunctionLayer.firstChild) wireJunctionLayer.removeChild(wireJunctionLayer.firstChild);
+  }
+
+  function renderSharedSourceJunctionDots() {
+    clearWireJunctionDots();
+    const points = collectSharedSourceSplitPoints(
+      state.connections,
+      (conn) => (Array.isArray(conn.debugRenderPoints) && conn.debugRenderPoints.length >= 2
+        ? conn.debugRenderPoints
+        : conn.points)
+    );
+    points.forEach((pt) => {
+      wireJunctionLayer.appendChild(
+        createSvgElement("circle", {
+          cx: pt.x,
+          cy: pt.y,
+          r: 2.8,
+          class: "wire-junction-dot",
+        })
+      );
+    });
   }
 
   function moveWireCorner(conn, index, target) {
@@ -2335,6 +2490,7 @@ export function createRenderer({
       }
     });
     state.debugOverlapCount = overlapCount;
+    renderSharedSourceJunctionDots();
   }
 
   function applyWirePathsFast(connections) {
@@ -2367,7 +2523,9 @@ export function createRenderer({
       if (!isValidPathString(d)) return;
       conn.path.setAttribute("d", d);
       if (conn.hitPath) conn.hitPath.setAttribute("d", d);
+      conn.debugRenderPoints = finalPoints.slice();
     });
+    renderSharedSourceJunctionDots();
   }
 
   function isValidPathString(d) {

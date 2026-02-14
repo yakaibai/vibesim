@@ -980,6 +980,15 @@ body.is-root-diagram #subsystemUpBtn {
   pointer-events: stroke;
 }
 
+.wire-junction-layer {
+  pointer-events: none;
+}
+
+.wire-junction-dot {
+  fill: var(--wire);
+  stroke: none;
+}
+
 .wire-corner-handle {
   fill: #ffffff;
   stroke: var(--accent-2);
