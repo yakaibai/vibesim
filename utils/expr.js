@@ -454,9 +454,9 @@ const stripLatexCommands = (latex) =>
 export const estimateLatexWidth = (latex) => {
   const visible = stripLatexCommands(latex);
   const length = Math.max(visible.length, 1);
-  const charWidth = 16;
-  const padding = 40;
-  const minWidth = 120;
+  const charWidth = 12;
+  const padding = 28;
+  const minWidth = 80;
   return Math.max(minWidth, Math.ceil(length * charWidth + padding));
 };
 

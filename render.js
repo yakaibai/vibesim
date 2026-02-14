@@ -26,7 +26,7 @@ const DEBUG_WIRE_CHECKS = false;
 const SELECTION_PAD = 10;
 const HOP_RADIUS = 4;
 const WIRE_CORNER_HANDLE_RADIUS = 6;
-const USERFUNC_MIN_WIDTH = 120;
+const USERFUNC_MIN_WIDTH = 80;
 const USERFUNC_FIXED_HEIGHT = 80;
 const USERFUNC_PADDING_X = 12;
 const USERFUNC_PADDING_Y = 16;
@@ -3069,7 +3069,7 @@ export function createRenderer({
     }
   }
 
-  function getMathSpanSize(mathGroup) {
+  function getMathSpanSize(mathGroup, { rawPx = false } = {}) {
     const span = mathGroup?.querySelector?.("span");
     if (!span || span.classList.contains("katex-target")) return null;
     const target = mathGroup.querySelector(".katex") || span;
@@ -3079,6 +3079,9 @@ export function createRenderer({
     const width = Math.max(rect.width, scrollW);
     const height = Math.max(rect.height, scrollH);
     if (!width || !height) return null;
+    if (rawPx) {
+      return { w: width, h: height };
+    }
     const scale = getSvgScale();
     return {
       w: pxToSvg(width, "x", scale),
@@ -3107,22 +3110,21 @@ export function createRenderer({
       width = Math.max(width, estimateWidth);
     }
     if (hasMeasuredTex) {
-      const scale = getSvgScale();
-      const scaledW = pxToSvg(measuredTex.w, "x", scale);
-      const scaledH = pxToSvg(measuredTex.h, "y", scale);
-      width = Math.max(width, Math.ceil(scaledW + USERFUNC_PADDING_X * 2));
+      width = Math.max(width, Math.ceil(measuredTex.w + USERFUNC_PADDING_X * 2));
       // Keep user-defined block height fixed; only width adapts to expression size.
       height = USERFUNC_FIXED_HEIGHT;
     }
     if (mathGroup) {
       for (let pass = 0; pass < 2; pass += 1) {
         setUserFuncMathBox(mathGroup, width, height);
+        // Use SVG-space dimensions so sizing is invariant to canvas zoom.
         const size = getMathSpanSize(mathGroup);
         if (!size) continue;
         const neededW = Math.ceil(size.w + USERFUNC_PADDING_X * 2);
-        const needsResize = neededW > width;
+        const targetW = Math.max(USERFUNC_MIN_WIDTH, neededW);
+        const needsResize = targetW !== width;
         if (!needsResize && !force) break;
-        width = Math.max(width, neededW);
+        width = targetW;
         height = USERFUNC_FIXED_HEIGHT;
       }
     }
@@ -3306,14 +3308,14 @@ export function createRenderer({
     setTimeout(() => {
       const mathGroup = block.group?.querySelector?.(config.className);
       const renderedSize = computeRenderedAutoMathSize(block, mathGroup);
-      if (!renderedSize) return;
-      if (renderedSize.width > block.width) {
-        applyUserFuncSize(
-          block,
-          Math.max(block.width, renderedSize.width),
-          config.fixedHeight,
-          { force: true }
-        );
+      if (!renderedSize) {
+        // KaTeX/layout may not be settled yet. Retry until attempt budget is exhausted.
+        scheduleUserFuncFit(block);
+        return;
+      }
+      const targetWidth = Math.max(config.minWidth, renderedSize.width);
+      if (targetWidth !== block.width) {
+        applyUserFuncSize(block, targetWidth, config.fixedHeight, { force: true });
         scheduleUserFuncFit(block);
       } else {
         userFuncResizeAttempts.delete(id);
@@ -4017,28 +4019,6 @@ export function createRenderer({
     }
     if (block.type === "backlash") {
       // icon only
-    }
-    if (block.type === "tf") {
-      const mathGroup = block.group.querySelector(".tf-math");
-      if (mathGroup) {
-        renderTeXMath(
-          mathGroup,
-          buildTransferTeX(block.params.num, block.params.den),
-          block.width,
-          block.height
-        );
-      }
-    }
-    if (block.type === "dtf") {
-      const mathGroup = block.group.querySelector(".dtf-math");
-      if (mathGroup) {
-        renderTeXMath(
-          mathGroup,
-          buildTransferTeX(block.params.num, block.params.den, "z"),
-          block.width,
-          block.height
-        );
-      }
     }
     if (block.type === "ddelay") {
       const mathGroup = block.group.querySelector(".ddelay-math");

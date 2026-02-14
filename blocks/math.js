@@ -118,7 +118,7 @@ export const createMathTemplates = (helpers) => {
         group.appendChild(createSvgElement("rect", { x: 0, y: 0, width: block.width, height: block.height, class: "block-body" }));
         const mathGroup = createSvgElement("g", { class: "math-block minmax-math" });
         group.appendChild(mathGroup);
-        renderTeXMath(mathGroup, "\\left|x\\right|", block.width, block.height);
+        renderTeXMath(mathGroup, "\\scriptsize{\\left|u\\right|}", block.width, block.height);
       },
     },
     min: {
@@ -156,15 +156,15 @@ export const createMathTemplates = (helpers) => {
       },
     },
     userFunc: {
-      width: 120,
+      width: 80,
       height: 80,
       inputs: [{ x: 0, y: 40, side: "left" }],
-      outputs: [{ x: 120, y: 40, side: "right" }],
+      outputs: [{ x: 80, y: 40, side: "right" }],
       defaultParams: { expr: "u" },
       resize: (block) => {
         const expr = String(block.params?.expr ?? "u");
         const length = Math.max(expr.length, 1);
-        const width = Math.max(120, 40 + length * 8);
+        const width = Math.max(80, 28 + length * 6);
         const height = 80;
         block.width = width;
         block.height = height;
