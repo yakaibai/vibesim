@@ -588,6 +588,29 @@ export const createInspector = ({
       };
       conditionInput.addEventListener("change", update);
       thresholdInput.addEventListener("input", update);
+    } else if (block.type === "comment") {
+      inspectorBody.innerHTML = `
+        <label class="param param-stack">
+          <span class="param-name">Comment text</span>
+          <textarea data-edit="commentText" rows="5"></textarea>
+        </label>
+        <div class="param param-inline"><span class="param-name">Show border</span><input type="checkbox" data-edit="showBorder" ${block.params.showBorder !== false ? "checked" : ""}></div>
+      `;
+      const commentTextInput = inspectorBody.querySelector("textarea[data-edit='commentText']");
+      const showBorderInput = inspectorBody.querySelector("input[data-edit='showBorder']");
+      if (commentTextInput) {
+        commentTextInput.value = String(block.params.commentText ?? "");
+        commentTextInput.addEventListener("input", () => {
+          block.params.commentText = commentTextInput.value;
+          renderer.updateBlockLabel(block);
+        });
+      }
+      if (showBorderInput) {
+        showBorderInput.addEventListener("change", () => {
+          block.params.showBorder = showBorderInput.checked;
+          renderer.updateBlockLabel(block);
+        });
+      }
     } else if (block.type === "saturation") {
       inspectorBody.innerHTML = `
         <label class="param">Min

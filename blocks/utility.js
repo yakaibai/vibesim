@@ -3,6 +3,7 @@ export const utilityLibrary = {
   title: "Utility",
   blocks: [
     { type: "switch", label: "Switch" },
+    { type: "comment", label: "Comment" },
   ],
 };
 
@@ -44,6 +45,57 @@ export const createUtilityTemplates = (helpers) => {
   };
 
   return {
+    comment: {
+      width: 220,
+      height: 120,
+      inputs: [],
+      outputs: [],
+      defaultParams: { commentText: "", showBorder: true },
+      render: (block) => {
+        const group = block.group;
+        const body = createSvgElement("rect", {
+          x: 0,
+          y: 0,
+          width: block.width,
+          height: block.height,
+          class: "block-body comment-body",
+        });
+        group.appendChild(body);
+        block.commentBody = body;
+
+        const textPadding = 10;
+        const foreign = createSvgElement("foreignObject", {
+          x: textPadding,
+          y: textPadding,
+          width: Math.max(1, block.width - textPadding * 2),
+          height: Math.max(1, block.height - textPadding * 2),
+          class: "comment-foreign upright",
+        });
+        group.appendChild(foreign);
+        block.commentForeign = foreign;
+
+        if (typeof document !== "undefined") {
+          const div = document.createElement("div");
+          div.setAttribute("xmlns", "http://www.w3.org/1999/xhtml");
+          div.className = "comment-text";
+          div.textContent = String(block.params?.commentText || "");
+          foreign.appendChild(div);
+          block.commentTextEl = div;
+        } else {
+          const fallback = createSvgElement(
+            "text",
+            {
+              x: textPadding,
+              y: 24,
+              class: "block-text upright comment-text-fallback",
+            },
+            String(block.params?.commentText || "")
+          );
+          group.appendChild(fallback);
+          block.commentTextFallback = fallback;
+        }
+      },
+    },
     switch: {
       width: 80,
       height: 80,

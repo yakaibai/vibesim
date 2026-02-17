@@ -1247,7 +1247,7 @@ export function createRenderer({
         createSvgElement("circle", {
           cx: pt.x,
           cy: pt.y,
-          r: 2.8,
+          r: 3,
           class: "wire-junction-dot",
         })
       );
@@ -1342,7 +1342,7 @@ export function createRenderer({
     let blockHeight = template.height;
     let dynamicInputs = null;
     let dynamicOutputs = null;
-    if (type === "scope") {
+    if (type === "scope" || type === "xyScope" || type === "comment") {
       const paramWidth = Number(params.width);
       const paramHeight = Number(params.height);
       if (Number.isFinite(paramWidth)) blockWidth = paramWidth;
@@ -1443,7 +1443,7 @@ export function createRenderer({
       });
     });
 
-    if (type === "scope" || type === "xyScope") {
+    if (type === "scope" || type === "xyScope" || type === "comment") {
       const resizeHandle = createSvgElement("rect", {
         class: "resize-handle",
         x: block.width - 16,
@@ -1461,6 +1461,8 @@ export function createRenderer({
 
     if (type === "scope" || type === "xyScope") {
       updateScopeLayout(block);
+    } else if (type === "comment") {
+      updateCommentLayout(block);
     }
 
     if (type === "constant" || type === "gain") {
@@ -1569,12 +1571,20 @@ export function createRenderer({
 
   const SCOPE_MIN_W = 160;
   const SCOPE_MIN_H = 120;
+  const COMMENT_MIN_W = 80;
+  const COMMENT_MIN_H = 60;
   const SCOPE_HANDLE_SIZE = 12;
   const SCOPE_HANDLE_INSET = 4;
 
   function clampScopeSize(width, height) {
     const clampedWidth = Math.max(SCOPE_MIN_W, snap(Number.isFinite(width) ? width : SCOPE_MIN_W));
     const clampedHeight = Math.max(SCOPE_MIN_H, snap(Number.isFinite(height) ? height : SCOPE_MIN_H));
+    return { width: clampedWidth, height: clampedHeight };
+  }
+
+  function clampCommentSize(width, height) {
+    const clampedWidth = Math.max(COMMENT_MIN_W, snap(Number.isFinite(width) ? width : COMMENT_MIN_W));
+    const clampedHeight = Math.max(COMMENT_MIN_H, snap(Number.isFinite(height) ? height : COMMENT_MIN_H));
     return { width: clampedWidth, height: clampedHeight };
   }
 
@@ -1655,6 +1665,61 @@ export function createRenderer({
 
     updateBlockTransform(block);
     if (block.scopeData || block.type === "xyScope") renderScope(block);
+    updateSelectionBox();
+  }
+
+  function updateCommentLayout(block) {
+    if (!block || block.type !== "comment") return;
+    const { width, height } = clampCommentSize(block.width, block.height);
+    block.width = width;
+    block.height = height;
+    block.params.width = width;
+    block.params.height = height;
+
+    const body = block.commentBody || block.group.querySelector(".comment-body");
+    if (body) {
+      body.setAttribute("width", width);
+      body.setAttribute("height", height);
+      const showBorder = block.params.showBorder !== false;
+      body.style.display = showBorder ? "" : "none";
+    }
+
+    const textPadding = 10;
+    const foreign = block.commentForeign || block.group.querySelector(".comment-foreign");
+    if (foreign) {
+      foreign.setAttribute("x", textPadding);
+      foreign.setAttribute("y", textPadding);
+      foreign.setAttribute("width", Math.max(1, width - textPadding * 2));
+      foreign.setAttribute("height", Math.max(1, height - textPadding * 2));
+    }
+    const textEl = block.commentTextEl || block.group.querySelector(".comment-text");
+    if (textEl) {
+      textEl.textContent = String(block.params.commentText || "");
+    }
+    const fallback = block.commentTextFallback || block.group.querySelector(".comment-text-fallback");
+    if (fallback) {
+      fallback.textContent = String(block.params.commentText || "");
+    }
+
+    if (block.dragRect) {
+      const minDragSize = 80;
+      const dragWidth = Math.max(width, minDragSize);
+      const dragHeight = Math.max(height, minDragSize);
+      const dragX = (width - dragWidth) / 2;
+      const dragY = (height - dragHeight) / 2;
+      block.dragRect.setAttribute("x", dragX);
+      block.dragRect.setAttribute("y", dragY);
+      block.dragRect.setAttribute("width", dragWidth);
+      block.dragRect.setAttribute("height", dragHeight);
+    }
+    if (block.resizeHandle) {
+      block.resizeHandle.setAttribute("x", width - SCOPE_HANDLE_SIZE - SCOPE_HANDLE_INSET);
+      block.resizeHandle.setAttribute("y", height - SCOPE_HANDLE_SIZE - SCOPE_HANDLE_INSET);
+      block.resizeHandle.setAttribute("width", SCOPE_HANDLE_SIZE);
+      block.resizeHandle.setAttribute("height", SCOPE_HANDLE_SIZE);
+    }
+
+    updateBlockTransform(block);
     updateSelectionBox();
   }
 
@@ -1822,7 +1887,8 @@ export function createRenderer({
       const nextHeight = startSize.height + (point.y - startPoint.y);
       block.width = nextWidth;
       block.height = nextHeight;
-      updateScopeLayout(block);
+      if (block.type === "comment") updateCommentLayout(block);
+      else updateScopeLayout(block);
       state.fastRouting = true;
       state.routingDirty = true;
       if (state.dirtyBlocks) state.dirtyBlocks.add(block.id);
@@ -3177,10 +3243,14 @@ export function createRenderer({
   }
 
   function resizeBlock(block, width, height) {
-    if (!block || (block.type !== "scope" && block.type !== "xyScope")) return;
+    if (!block || (block.type !== "scope" && block.type !== "xyScope" && block.type !== "comment")) return;
     block.width = width;
     block.height = height;
-    updateScopeLayout(block);
+    if (block.type === "comment") {
+      updateCommentLayout(block);
+    } else {
+      updateScopeLayout(block);
+    }
     state.routingDirty = true;
     if (state.dirtyBlocks) state.dirtyBlocks.add(block.id);
     updateConnections(true);
@@ -4042,6 +4112,9 @@ export function createRenderer({
     if (block.type === "delay") {
       const mathGroup = block.group.querySelector(".delay-math");
       if (mathGroup) renderTeXMath(mathGroup, "e^{-sT}", block.width, block.height);
+    }
+    if (block.type === "comment") {
+      updateCommentLayout(block);
     }
     if (block.type === "userFunc") {
       const mathGroup = block.group.querySelector(".userfunc-math");
