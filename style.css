@@ -601,25 +601,29 @@ body {
   padding: 8px 0;
 }
 
+.sidebar-content details.tool-group {
+  margin-bottom: 0;
+}
+
 .block-library {
-  padding: 0 8px;
+  padding: 0;
 }
 
 .tool-group {
-  margin-bottom: 12px;
-  border-radius: 4px;
-  overflow: hidden;
-  border: 1px solid var(--vscode-border);
-  background-color: var(--vscode-widget-background);
+  margin-bottom: 0;
+  border-radius: 0;
+  overflow: visible;
+  border: none;
+  background-color: transparent;
 }
 
 .tool-group summary {
-  padding: 8px 12px;
+  padding: 4px 8px;
   cursor: pointer;
   font-size: 12px;
   font-weight: 600;
   color: var(--vscode-foreground);
-  background-color: var(--vscode-list-hover-background);
+  background-color: transparent;
   border-bottom: 1px solid var(--vscode-border);
   transition: background-color 0.15s ease;
   user-select: none;
@@ -629,8 +633,8 @@ body {
 }
 
 .tool-group summary:hover {
-  background-color: var(--vscode-list-active-background);
-  color: #ffffff;
+  background-color: var(--vscode-list-hover-background);
+  color: var(--vscode-foreground);
 }
 
 .tool-group summary::after {
@@ -659,6 +663,15 @@ body {
   gap: 8px;
 }
 
+.tool-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
+}
+
 .tool:hover {
   background-color: var(--vscode-list-hover-background);
   color: var(--vscode-foreground);
@@ -667,23 +680,6 @@ body {
 .tool:active {
   background-color: var(--vscode-list-active-background);
   color: #ffffff;
-}
-
-.tool::before {
-  content: "";
-  width: 4px;
-  height: 4px;
-  border-radius: 2px;
-  background-color: var(--vscode-foreground-secondary);
-  transition: background-color 0.15s ease;
-}
-
-.tool:hover::before {
-  background-color: var(--vscode-button-background);
-}
-
-.tool:active::before {
-  background-color: #ffffff;
 }
 
 .sidebar-section {
@@ -1665,7 +1661,7 @@ body {
 }
 
 .tool-group {
-  margin-bottom: 4px;
+  margin-bottom: 0;
 }
 
 .tool-group > summary {
@@ -1727,6 +1723,11 @@ body {
   stroke-linecap: round;
   stroke-linejoin: round;
   flex-shrink: 0;
+}
+
+#loadSubsystemBtn svg {
+  width: 16px;
+  height: 16px;
 }
 
 .toolbox .hint {

@@ -8,8 +8,8 @@
   "scripts": {
     "start": "electron .",
     "dev": "python -m http.server 8000",
-    "build": "electron-builder --win --dir",
-    "dist": "electron-builder --win --dir"
+    "build": "electron-builder --win",
+    "dist": "electron-builder --win"
   },
   "dependencies": {},
   "devDependencies": {
@@ -24,7 +24,7 @@
     },
     "win": {
       "target": [
-        "portable"
+        "dir"
       ]
     },
     "electronDownload": {

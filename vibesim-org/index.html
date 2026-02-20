@@ -1,0 +1,215 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <!-- Google tag (gtag.js) -->
+  <script async src="https://www.googletagmanager.com/gtag/js?id=G-PMSDNW5N3Z"></script>
+  <script>
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){dataLayer.push(arguments);}
+    gtag('js', new Date());
+
+    gtag('config', 'G-PMSDNW5N3Z');
+  </script>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#ffffff">
+  <meta name="color-scheme" content="only light">
+  <title>Vibesim</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;600;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="assets/katex/katex.min.css">
+  <script src="assets/katex/katex.min.js" defer></script>
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <div class="brand-title">
+        <span class="brand-logo" aria-hidden="true">
+          <svg viewBox="0 0 48 32">
+            <rect x="1.5" y="1.5" width="14" height="10" rx="1.5" />
+            <rect x="32.5" y="20.5" width="14" height="10" rx="1.5" />
+            <rect x="1.5" y="20.5" width="14" height="10" rx="1.5" />
+            <path d="M15.5 6.5h8.5v19h8.5" />
+            <path d="M15.5 25.5h17" />
+          </svg>
+        </span>
+        Vibesim
+      </div>
+      <div class="brand-subtitle">A block diagram control system simulator</div>
+    </div>
+    <div class="github-star github-star--topbar">
+      <a class="github-button"
+         href="https://github.com/kennyjensen/vibesim"
+         data-color-scheme="no-preference: light; light: light; dark: light;"
+         data-icon="octicon-star"
+         data-size="large"
+         data-show-count="true"
+         aria-label="Star kennyjensen/vibesim on GitHub">Star</a>
+    </div>
+  </header>
+
+  <main class="layout">
+    <div class="panel-carousel">
+      <aside id="blockLibrary" class="toolbox panel panel-left">
+        <h2>Block Library</h2>
+        <div id="blockLibraryGroups"></div>
+        <div class="button-row">
+          <button id="loadSubsystemBtn" class="secondary">Load Subsystem</button>
+        </div>
+        <input id="loadSubsystemInput" type="file" accept=".yaml,.yml,.txt,text/yaml,text/plain,application/x-yaml,application/yaml,*/*" hidden>
+      </aside>
+
+      <div class="right-column">
+        <div id="examplesPanel" class="examples-panel panel-card">
+          <h3>Examples</h3>
+          <div id="examplesList" class="button-stack"></div>
+        </div>
+        <div id="simPanel" class="panel-card sim-panel">
+          <h3>Sim Properties</h3>
+          <label class="param">Name
+            <input id="diagramName" type="text" value="vibesim">
+          </label>
+          <label class="param">Sample time (s)
+            <input id="simDt" type="number" value="0.01" step="0.001" min="0.0001">
+          </label>
+          <label class="param">Runtime (s)
+            <input id="runtimeInput" type="number" value="10" step="0.5">
+          </label>
+          <label class="param param-inline"><span class="param-name">Auto-route</span><input id="autoRouteInput" type="checkbox" checked></label>
+          <div class="button-row">
+            <button class="secondary sim-run" data-action="run">Run</button>
+            <button id="resetSimBtn" class="secondary">Reset</button>
+          </div>
+          <div class="button-row">
+            <button id="loadBtn" class="secondary">Load</button>
+            <button id="saveBtn" class="secondary">Save</button>
+            <button id="clearBtn" class="danger">Clear</button>
+          </div>
+          <input id="loadInput" type="file" accept=".yaml,.yml,.txt,text/yaml,text/plain,application/x-yaml,application/yaml,*/*" hidden>
+          <div id="status" class="status">Idle</div>
+        </div>
+
+        <div id="inspector" class="inspector panel-card">
+          <h3>Block Properties</h3>
+          <div id="inspectorBody" class="inspector-body">Select a block or wire.</div>
+          <div class="button-row">
+            <button id="rotateSelection" class="secondary">Rotate</button>
+            <button id="deleteSelection" class="danger">Delete</button>
+          </div>
+        </div>
+        <div id="variablesPanel" class="variables-panel panel-card">
+          <h3>Variables</h3>
+          <textarea id="variablesInput" rows="6" placeholder="k=2&#10;w=3.14"></textarea>
+          <button id="applyVariables" class="secondary">Apply</button>
+          <div id="variablesPreview" class="variables-preview"></div>
+        </div>
+        <div id="codegenPanel" class="panel-card codegen-panel">
+          <h3>Code Generation</h3>
+          <div class="codegen-row">
+            <label class="param">Language
+              <select id="codegenLang">
+                <option value="c">C</option>
+                <option value="python">Python</option>
+                <option value="tikz">TikZ</option>
+              </select>
+            </label>
+            <label class="param param-inline">
+              <span>Include main()</span>
+              <input id="codegenIncludeMain" type="checkbox" checked>
+            </label>
+          </div>
+          <button id="codegenBtn" class="secondary">Generate</button>
+        </div>
+        <div id="stabilityPanel" class="panel-card stability-panel">
+          <h3>Stability Margins</h3>
+          <label class="param">Loop
+            <select id="marginLoopSelect"></select>
+          </label>
+          <pre id="marginOutputText" class="margin-output">No loops detected.</pre>
+        </div>
+        <div id="debugPanel" class="debug-panel panel-card">
+          <h3>Debug</h3>
+          <button id="copyDebug" class="secondary">Copy debug</button>
+          <pre id="debugLog">Routing debug output will appear here.</pre>
+        </div>
+        <div id="aboutPanel" class="about-panel panel-card">
+          <h3>About Vibesim</h3>
+          <div class="about-logo" aria-hidden="true">
+        <svg viewBox="0 0 48 32">
+          <rect x="1.5" y="1.5" width="14" height="10" rx="1.5" />
+          <rect x="32.5" y="20.5" width="14" height="10" rx="1.5" />
+          <rect x="1.5" y="20.5" width="14" height="10" rx="1.5" />
+          <path d="M15.5 6.5h8.5v19h8.5" />
+          <path d="M15.5 25.5h17" />
+        </svg>
+        <div class="github-star github-star--about">
+          <a class="github-button"
+             href="https://github.com/kennyjensen/vibesim"
+             data-color-scheme="no-preference: light; light: light; dark: light;"
+             data-icon="octicon-star"
+             data-size="large"
+             data-show-count="true"
+             aria-label="Star kennyjensen/vibesim on GitHub">Star</a>
+        </div>
+      </div>
+      <p>
+        <a href="https://github.com/kennyjensen/vibesim" target="_blank" rel="noopener">Vibesim</a>
+        is a browser-based block diagram simulator for control systems. Build diagrams by dragging blocks
+        onto the canvas, wire them together, and simulate behavior directly in the browser.
+          </p>
+          <p>
+            Please submit bugs and feature requests
+            <a href="https://github.com/kennyjensen/vibesim/issues" target="_blank" rel="noopener">here</a>.
+          </p>
+        </div>
+      </div>
+    </div>
+
+    <section class="workspace">
+      <div id="canvas">
+        <div class="subsystem-nav">
+          <button id="subsystemUpBtn" class="floating-btn" aria-label="Parent diagram" title="Parent diagram" hidden>
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M12 19V5M6 11l6-6 6 6" />
+            </svg>
+          </button>
+        </div>
+        <div class="floating-controls">
+          <button id="runBtn" class="floating-btn" aria-label="Run" title="Run" data-action="run">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M7 5l12 7-12 7z" />
+            </svg>
+          </button>
+          <button id="homeBtn" class="floating-btn" aria-label="Home" title="Home">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M4 11l8-6 8 6M6 10v9h12v-9" />
+            </svg>
+          </button>
+          <button id="zoomInBtn" class="floating-btn" aria-label="Zoom in" title="Zoom in">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <circle cx="11" cy="11" r="7" />
+              <path d="M11 8v6M8 11h6M16.5 16.5L21 21" />
+            </svg>
+          </button>
+          <button id="zoomOutBtn" class="floating-btn" aria-label="Zoom out" title="Zoom out">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <circle cx="11" cy="11" r="7" />
+              <path d="M8 11h6M16.5 16.5L21 21" />
+            </svg>
+          </button>
+        </div>
+        <svg id="svgCanvas">
+          <g id="wireLayer"></g>
+          <g id="blockLayer"></g>
+          <g id="overlayLayer"></g>
+        </svg>
+      </div>
+    </section>
+  </main>
+
+  <script async defer src="https://buttons.github.io/buttons.js"></script>
+  <script type="module" src="app.js"></script>
+</body>
+</html>

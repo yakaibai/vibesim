@@ -1,0 +1,211 @@
+version: 1
+name: Anti-windup
+blocks:
+  -
+    id: b3
+    type: gain
+    x: 1970
+    y: 1570
+    rotation: 0
+    params:
+      gain: 1
+  -
+    id: b5
+    type: gain
+    x: 2050
+    y: 1700
+    rotation: 0
+    params:
+      gain: 2
+  -
+    id: b6
+    type: sum
+    x: 2180
+    y: 1600
+    rotation: 0
+    params:
+      signs: [1,1,1]
+  -
+    id: b8
+    type: tf
+    x: 2450
+    y: 1570
+    rotation: 0
+    params:
+      num: [1]
+      den: [1,3,1]
+  -
+    id: b9
+    type: saturation
+    x: 2290
+    y: 1570
+    rotation: 0
+    params:
+      min: -1
+      max: 1
+  -
+    id: b10
+    type: sum
+    x: 2320
+    y: 1730
+    rotation: 90
+    params:
+      signs: [1,1,-1]
+  -
+    id: b11
+    type: scope
+    x: 2730
+    y: 1530
+    rotation: 0
+    params:
+      tMin: ""
+      tMax: ""
+      yMin: ""
+      yMax: ""
+      width: 220
+      height: 160
+  -
+    id: b12
+    type: step
+    x: 1600
+    y: 1570
+    rotation: 0
+    params:
+      stepTime: 2
+  -
+    id: b14
+    type: sum
+    x: 1760
+    y: 1600
+    rotation: 0
+    params:
+      signs: [1,1,-1]
+  -
+    id: b15
+    type: sum
+    x: 1850
+    y: 1730
+    rotation: 0
+    params:
+      signs: [1,1,1]
+  -
+    id: b16
+    type: integrator
+    x: 1920
+    y: 1700
+    rotation: 0
+    params:
+      {}
+  -
+    id: b18
+    type: gain
+    x: 1970
+    y: 1820
+    rotation: 180
+    params:
+      gain: 1
+connections:
+  -
+    from: b5
+    to: b6
+    fromIndex: 0
+    toIndex: 2
+    points: [[2150,1740],[2190,1740],[2190,1630]]
+  -
+    from: b6
+    to: b9
+    fromIndex: 0
+    toIndex: 0
+    points: [[2210,1610],[2290,1610]]
+  -
+    from: b9
+    to: b8
+    fromIndex: 0
+    toIndex: 0
+    points: [[2370,1610],[2450,1610]]
+  -
+    from: b6
+    to: b10
+    fromIndex: 0
+    toIndex: 2
+    points: [[2210,1610],[2250,1610],[2250,1740],[2310,1740]]
+  -
+    from: b9
+    to: b10
+    fromIndex: 0
+    toIndex: 1
+    points: [[2370,1610],[2400,1610],[2400,1740],[2350,1740]]
+  -
+    from: b14
+    to: b3
+    fromIndex: 0
+    toIndex: 0
+    points: [[1790,1610],[1970,1610]]
+  -
+    from: b12
+    to: b14
+    fromIndex: 0
+    toIndex: 0
+    points: [[1680,1610],[1750,1610]]
+  -
+    from: b8
+    to: b14
+    fromIndex: 0
+    toIndex: 2
+    points: [[2610,1610],[2640,1610],[2640,1930],[1770,1930],[1770,1630]]
+  -
+    from: b14
+    to: b15
+    fromIndex: 0
+    toIndex: 1
+    points: [[1790,1610],[1860,1610],[1860,1720]]
+  -
+    from: b12
+    to: b11
+    fromIndex: 0
+    toIndex: 0
+    points: [[1680,1610],[1710,1610],[1710,1540],[2690,1540],[2690,1570],[2730,1570]]
+  -
+    from: b8
+    to: b11
+    fromIndex: 0
+    toIndex: 1
+    points: [[2610,1610],[2730,1610]]
+  -
+    from: b15
+    to: b16
+    fromIndex: 0
+    toIndex: 0
+    points: [[1880,1740],[1920,1740]]
+  -
+    from: b16
+    to: b5
+    fromIndex: 0
+    toIndex: 0
+    points: [[2000,1740],[2050,1740]]
+  -
+    from: b10
+    to: b18
+    fromIndex: 0
+    toIndex: 0
+    points: [[2330,1760],[2330,1860],[2070,1860]]
+  -
+    from: b6
+    to: b11
+    fromIndex: 0
+    toIndex: 2
+    points: [[2210,1610],[2250,1610],[2250,1680],[2690,1680],[2690,1650],[2730,1650]]
+  -
+    from: b3
+    to: b6
+    fromIndex: 0
+    toIndex: 0
+    points: [[2070,1610],[2170,1610]]
+  -
+    from: b18
+    to: b15
+    fromIndex: 0
+    toIndex: 2
+    points: [[1970,1860],[1860,1860],[1860,1760]]
+variables: ""
+runtime: 10

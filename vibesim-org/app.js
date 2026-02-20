@@ -4,24 +4,24 @@ import { getSnapOffset, shouldCollapse, shouldExpand, lockAxis } from "./carouse
 import { generateCode } from "./codegen/index.js";
 import { stabilityMargins } from "./control/margins.js";
 import { diagramToFRD } from "./control/diagram.js";
-import { blockLibrary, buildBlockTemplates } from "./blocks/index.js";
+import { blockLibrary } from "./blocks/index.js";
 import { createInspector } from "./blocks/inspector.js";
 import { evalExpression } from "./utils/expr.js";
 import { captureRoutePointsSnapshot, applyRoutePointsSnapshot } from "./utils/route-points.js";
 import { collectExternalPorts, stabilizeExternalPortOrder, externalPortsChanged } from "./utils/subsystem-ports.js";
 import { GRID_SIZE } from "./geometry.js";
 
-let svg = null;
+const svg = document.getElementById("svgCanvas");
 const blockLayer = document.getElementById("blockLayer");
 const wireLayer = document.getElementById("wireLayer");
 const overlayLayer = document.getElementById("overlayLayer");
+const runBtn = document.getElementById("runBtn");
 const runButtons = document.querySelectorAll('[data-action="run"]');
-const resetButtons = document.querySelectorAll('[data-action="reset"]');
+const resetSimBtn = document.getElementById("resetSimBtn");
+const clearBtn = document.getElementById("clearBtn");
 const saveBtn = document.getElementById("saveBtn");
 const loadBtn = document.getElementById("loadBtn");
 const loadInput = document.getElementById("loadInput");
-const fileSaveAsBtn = document.getElementById("fileSaveAsBtn");
-const fileOpenInput = document.getElementById("fileOpenInput");
 const loadSubsystemBtn = document.getElementById("loadSubsystemBtn");
 const loadSubsystemInput = document.getElementById("loadSubsystemInput");
 const subsystemUpBtn = document.getElementById("subsystemUpBtn");
@@ -37,25 +37,12 @@ const runtimeInput = document.getElementById("runtimeInput");
 const autoRouteInput = document.getElementById("autoRouteInput");
 const inspectorBody = document.getElementById("inspectorBody");
 const deleteSelectionBtn = document.getElementById("deleteSelection");
+const examplesList = document.getElementById("examplesList");
 const rotateSelectionBtn = document.getElementById("rotateSelection");
 const errorBox = document.getElementById("errorBox");
 const debugPanel = document.getElementById("debugPanel");
 const debugLog = document.getElementById("debugLog");
-const statusBarInfo = document.getElementById("statusBarInfo");
-const statusBarTime = document.getElementById("statusBarTime");
-const statusBarZoom = document.getElementById("statusBarZoom");
-const statusBarBlocks = document.getElementById("statusBarBlocks");
-const statusBarConnections = document.getElementById("statusBarConnections");
-
-let blockLibraryGroups = null;
-
-const updateStatusBar = (info, time, zoom) => {
-  if (statusBarInfo && info) statusBarInfo.textContent = info;
-  if (statusBarTime && time !== undefined && time !== null) statusBarTime.textContent = `${time.toFixed(2)}s`;
-  if (statusBarZoom && zoom !== undefined && zoom !== null) statusBarZoom.textContent = `${Math.round(zoom * 100)}%`;
-  if (statusBarBlocks) statusBarBlocks.textContent = `${state.blocks.size} blocks`;
-  if (statusBarConnections) statusBarConnections.textContent = `${state.connections.length} connections`;
-};
+const blockLibraryGroups = document.getElementById("blockLibraryGroups");
 
 const DEBUG_UI = false;
 
@@ -86,160 +73,9 @@ const applyTheme = (themeId) => {
 
 
 const renderBlockLibrary = () => {
-  console.log('renderBlockLibrary() - blockLibraryGroups:', blockLibraryGroups);
   if (!blockLibraryGroups) return;
   blockLibraryGroups.innerHTML = "";
   const groups = [...blockLibrary];
-  console.log('renderBlockLibrary() - groups:', groups);
-  
-  const helpers = {
-    GRID_SIZE,
-    svgRect: (x, y, w, h, cls) => {
-      const el = document.createElementNS("http://www.w3.org/2000/svg", "rect");
-      el.setAttribute("x", String(x));
-      el.setAttribute("y", String(y));
-      el.setAttribute("width", String(Math.max(0, w)));
-      el.setAttribute("height", String(Math.max(0, h)));
-      el.setAttribute("class", cls);
-      return el;
-    },
-    svgText: (x, y, text) => {
-      return helpers.createSvgElement("text", { x, y, class: "block-text upright" }, text);
-    },
-    createSvgElement: (tag, attrs = {}, text = "") => {
-      const el = document.createElementNS("http://www.w3.org/2000/svg", tag);
-      Object.entries(attrs).forEach(([key, value]) => {
-        el.setAttribute(key, String(value));
-      });
-      if (text) el.textContent = text;
-      return el;
-    },
-    renderTeXMath: (group, tex, width, height) => {
-      group.innerHTML = "";
-      const foreign = document.createElementNS("http://www.w3.org/2000/svg", "foreignObject");
-      foreign.setAttribute("x", "0");
-      foreign.setAttribute("y", "0");
-      foreign.setAttribute("width", String(width));
-      foreign.setAttribute("height", String(height));
-      foreign.setAttribute("class", "upright");
-      const div = document.createElement("div");
-      div.setAttribute("xmlns", "http://www.w3.org/1999/xhtml");
-      div.className = "math-foreign";
-      const span = document.createElement("span");
-      span.className = "katex-target";
-      span.dataset.tex = tex;
-      span.style.whiteSpace = "nowrap";
-      if (window.katex && typeof window.katex.render === "function") {
-        try {
-          window.katex.render(tex, span, { throwOnError: false });
-          span.classList.remove("katex-target");
-        } catch {
-          span.textContent = tex;
-        }
-      } else {
-        span.textContent = tex;
-      }
-      div.appendChild(span);
-      foreign.appendChild(div);
-      group.appendChild(foreign);
-    },
-    renderSourcePlot: (group, width, height, plotPath) => {
-      group.appendChild(helpers.svgRect(0, 0, width, height, "block-body"));
-      const padding = Math.min(4, width * 0.05, height * 0.05);
-      const axisX = padding;
-      const axisY = height - padding;
-      const axisTop = padding;
-      const axisRight = width - padding;
-      if (axisY > axisTop && axisRight > axisX) {
-        group.appendChild(
-          helpers.createSvgElement("line", {
-            x1: axisX,
-            y1: axisY,
-            x2: axisRight,
-            y2: axisY,
-            class: "axis",
-          })
-        );
-        group.appendChild(
-          helpers.createSvgElement("line", {
-            x1: axisX,
-            y1: axisY,
-            x2: axisX,
-            y2: axisTop,
-            class: "axis",
-          })
-        );
-      }
-      if (plotPath) {
-        group.appendChild(
-          helpers.createSvgElement("path", {
-            d: plotPath,
-            class: "plot",
-          })
-        );
-      }
-    },
-    renderCenteredAxesPlot: (group, width, height, plotPath) => {
-      group.appendChild(helpers.svgRect(0, 0, width, height, "block-body"));
-      const padding = Math.min(4, width * 0.05, height * 0.05);
-      const axisX = padding;
-      const axisY = height - padding;
-      const axisTop = padding;
-      const axisRight = width - padding;
-      if (axisY > axisTop && axisRight > axisX) {
-        group.appendChild(
-          helpers.createSvgElement("line", {
-            x1: axisX,
-            y1: axisY,
-            x2: axisRight,
-            y2: axisY,
-            class: "axis",
-          })
-        );
-        group.appendChild(
-          helpers.createSvgElement("line", {
-            x1: axisX,
-            y1: axisY,
-            x2: axisX,
-            y2: axisTop,
-            class: "axis",
-          })
-        );
-      }
-      if (plotPath) {
-        group.appendChild(
-          helpers.createSvgElement("path", {
-            d: plotPath,
-            class: "plot",
-          })
-        );
-      }
-    },
-    formatLabelTeX: (tex) => tex,
-    buildTransferTeX: (num, den) => `\\frac{${num.join("s+")}}{${den.join("s+")}}`,
-    renderLabelNode: (block, label, { showNode = true } = {}) => {
-      const group = block.group;
-      if (!group.appendChild) {
-        console.error("renderLabelNode: group.appendChild is not a function", group);
-        return;
-      }
-      const tex = helpers.formatLabelTeX(label);
-      const mathWidth = Math.max(block.width, tex.length * 8 + 12);
-      const offsetX = (block.width - mathWidth) / 2;
-      const mathGroup = helpers.createSvgElement("g", {
-        class: "label-math",
-        transform: `translate(${offsetX},-24)`,
-      });
-      group.appendChild(mathGroup);
-      helpers.renderTeXMath(mathGroup, tex, mathWidth, block.height);
-      if (showNode) {
-        group.appendChild(helpers.createSvgElement("circle", { cx: 20, cy: 20, r: 5, class: "label-node" }));
-      }
-    },
-  };
-  
-  window.blockTemplates = buildBlockTemplates(helpers);
-  
   if (state.loadedSubsystems.size) {
     const subsystemBlocks = Array.from(state.loadedSubsystems.entries()).map(([key, spec]) => ({
       type: "subsystem",
@@ -263,135 +99,7 @@ const renderBlockLibrary = () => {
       button.className = "tool";
       button.dataset.type = item.type;
       if (item.subsystemKey) button.dataset.subsystemKey = item.subsystemKey;
-      button.draggable = true;
-      
-      button.addEventListener("dragstart", (event) => {
-        console.log('button dragstart triggered, type:', item.type);
-        event.dataTransfer.effectAllowed = "copy";
-        event.dataTransfer.setData("text/plain", JSON.stringify({
-          type: item.type,
-          subsystemKey: item.subsystemKey || ""
-        }));
-        
-        const dragGhost = button.cloneNode(true);
-        dragGhost.style.position = "absolute";
-        dragGhost.style.top = "-9999px";
-        dragGhost.style.left = "-9999px";
-        dragGhost.style.opacity = "0.8";
-        document.body.appendChild(dragGhost);
-        event.dataTransfer.setDragImage(dragGhost, 16, 16);
-        
-        setTimeout(() => {
-          if (dragGhost.parentNode) {
-            document.body.removeChild(dragGhost);
-          }
-        }, 0);
-      });
-      
-      const iconSvg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-      iconSvg.setAttribute("fill", "none");
-      iconSvg.setAttribute("stroke", "currentColor");
-      iconSvg.setAttribute("stroke-width", "1.5");
-      iconSvg.setAttribute("stroke-linecap", "round");
-      iconSvg.setAttribute("stroke-linejoin", "round");
-      
-      const template = blockTemplates[item.type];
-      if (template && template.render) {
-        const targetHeight = 32;
-        const scale = targetHeight / template.height;
-        const targetWidth = template.width * scale;
-        iconSvg.setAttribute("width", String(targetWidth));
-        iconSvg.setAttribute("height", String(targetHeight));
-        iconSvg.setAttribute("viewBox", `0 0 ${template.width} ${template.height}`);
-        
-        const block = {
-          group: iconSvg,
-          width: template.width,
-          height: template.height,
-          params: template.defaultParams || {},
-        };
-        template.render(block);
-      } else {
-        let iconPath = "";
-        switch (item.type) {
-          case "constant":
-            iconPath = "M4 8h16M12 4v16";
-            break;
-          case "step":
-            iconPath = "M4 16h4v4h4v-4h4v4h4M4 16h16";
-            break;
-          case "ramp":
-            iconPath = "M4 16l4-4 4 4 4-4M4 16h16";
-            break;
-          case "impulse":
-            iconPath = "M4 16l4-8 4 8 4-8M4 16h16";
-            break;
-          case "sine":
-            iconPath = "M4 12q4-4 8-4 8 4-4 4-8-8-8";
-            break;
-          case "chirp":
-            iconPath = "M4 12q2-4 3-3 4-4t3 2 4 4q2-4 3-3 4-4t3 2 4 4q2-4 3-3 4-4t3 2 4 4";
-            break;
-          case "noise":
-            iconPath = "M4 12h2l2-2 2 2 2-2M10 12h2l2-2 2 2 2-2M16 12h2l2-2 2 2 2-2";
-            break;
-          case "fileSource":
-            iconPath = "M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6zM14 2v6h6M16 13H8M16 17H8M16 9H8";
-            break;
-          case "labelSource":
-            iconPath = "M4 6h16M4 12h16M4 18h16";
-            break;
-          case "integrator":
-            iconPath = "M4 12h4l-2-2v4l2-2h4l2 2v-4l-2 2h4";
-            break;
-          case "tf":
-            iconPath = "M4 12h4l2-2 4 2 2-2 4 2 4-2M4 12h16";
-            break;
-          case "delay":
-            iconPath = "M4 12h4l2-2 4 2 2-2 4 2 4-2M4 12h16";
-            break;
-          case "stateSpace":
-            iconPath = "M4 8h4v8h4v-8h4v8h4M4 8h16";
-            break;
-          case "lpf":
-            iconPath = "M4 12h4l2-2 4 2 2-2 4 2 4-2M4 12h16";
-            break;
-          case "hpf":
-            iconPath = "M4 12h4l2-2 4 2 2-2 4 2 4-2M4 12h16";
-            break;
-          case "derivative":
-            iconPath = "M4 12h4l2-2 4 2 2-2 4 2 4-2M4 12h16";
-            break;
-          case "pid":
-            iconPath = "M4 12h4l2-2 4 2 2-2 4 2 4-2M4 12h16";
-            break;
-          case "gain":
-            iconPath = "M4 12h4l-2-2v4l2-2h4l2 2v-4l-2 2h4";
-            break;
-          case "sum":
-            iconPath = "M12 4l-4 4h3l-2 2h2l2 2h3l4-4M12 4l4 4h-3l2 2h-2l-2 2h-3l-4 4";
-            break;
-          case "subsystem":
-            iconPath = "M3 7v10a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V9l-6-6zM21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4";
-            break;
-          default:
-            iconPath = "M4 4h16M4 8h16M4 12h16M4 16h16M4 20h16";
-        }
-        
-        const iconPathEl = document.createElementNS("http://www.w3.org/2000/svg", "path");
-        iconPathEl.setAttribute("d", iconPath);
-        iconSvg.appendChild(iconPathEl);
-      }
-      
-      const iconContainer = document.createElement("span");
-      iconContainer.className = "tool-icon";
-      iconContainer.appendChild(iconSvg);
-      
-      const labelSpan = document.createElement("span");
-      labelSpan.textContent = item.label;
-      
-      button.appendChild(iconContainer);
-      button.appendChild(labelSpan);
+      button.textContent = item.label;
       details.appendChild(button);
     });
     blockLibraryGroups.appendChild(details);
@@ -447,8 +155,6 @@ const state = {
 
 let fitToDiagram = () => {};
 let updateStabilityPanel = () => {};
-let updateViewBox = () => {};
-let updateViewBoxWithAnchor = () => {};
 const signalDiagramChanged = () => {
   window.dispatchEvent(new Event("diagramChanged"));
 };
@@ -539,7 +245,7 @@ function openSubsystemFromBlock(block) {
   if (!block || block.type !== "subsystem") return;
   const spec = block.params?.subsystem;
   if (!spec || !Array.isArray(spec.blocks) || !Array.isArray(spec.connections)) {
-    if (statusEl) statusEl.textContent = "Subsystem is missing internal diagram data.";
+    statusEl.textContent = "Subsystem is missing internal diagram data.";
     return;
   }
   const snapshot = serializeDiagram(state);
@@ -563,7 +269,7 @@ function openSubsystemFromBlock(block) {
   );
   renderer.selectBlock(null);
   renderInspector(null);
-  if (statusEl) statusEl.textContent = `Opened subsystem: ${block.params?.name || "Subsystem"}`;
+  statusEl.textContent = `Opened subsystem: ${block.params?.name || "Subsystem"}`;
 }
 
 function closeSubsystemView() {
@@ -587,7 +293,7 @@ function closeSubsystemView() {
         externalInputs: deepClone(host.params?.externalInputs || []),
         externalOutputs: deepClone(host.params?.externalOutputs || []),
       };
-      if (statusEl) statusEl.textContent =
+      statusEl.textContent =
         `Returned to parent (warning: ${error?.message || "invalid subsystem external ports"})`;
     }
     host.params.subsystem = deepClone(spec);
@@ -605,7 +311,7 @@ function closeSubsystemView() {
     renderInspector(host);
     signalDiagramChanged();
   } else {
-    if (statusEl) statusEl.textContent = "Returned to parent";
+    statusEl.textContent = "Returned to parent";
   }
   updateSubsystemNavUi();
 }
@@ -765,7 +471,29 @@ const focusPropertiesPanel = () => {
 };
 
 let renderInspector = () => {};
-let renderer = null;
+const renderer = createRenderer({
+  svg,
+  blockLayer,
+  wireLayer,
+  overlayLayer,
+  state,
+  onSelectBlock: (blockId) => {
+    renderInspector(blockId);
+    focusPropertiesPanel();
+    updateStabilityPanel();
+  },
+  onSelectConnection: (connectionId) => {
+    renderInspector(connectionId);
+    focusPropertiesPanel();
+    updateStabilityPanel();
+  },
+  onOpenSubsystem: (block) => {
+    openSubsystemFromBlock(block);
+  },
+  onConnectionError: (message) => {
+    if (statusEl) statusEl.textContent = message;
+  },
+});
 
 renderInspector = createInspector({
   inspectorBody,
@@ -880,7 +608,7 @@ function clearWorkspace() {
   state.pauseRequested = false;
   renderer.clearWorkspace();
   state.spawnIndex = 0;
-  if (statusEl) statusEl.textContent = "Idle";
+  statusEl.textContent = "Idle";
   inspectorBody.textContent = "Select a block or wire.";
 }
 
@@ -1151,44 +879,6 @@ function loadDiagram(data, options = {}) {
   }
 }
 
-function newDiagram() {
-  state.simSession = null;
-  state.pauseRequested = false;
-  state.routeEpoch = (Number(state.routeEpoch) || 0) + 1;
-  state.diagramName = "vibesim";
-  if (diagramNameInput) diagramNameInput.value = state.diagramName;
-  if (runtimeInput) runtimeInput.value = "10";
-  if (simDt) {
-    simDt.value = "0.01";
-    state.sampleTime = 0.01;
-  }
-  state.autoRoute = true;
-  if (autoRouteInput) autoRouteInput.checked = state.autoRoute;
-  state.variablesText = "";
-  const variablesInput = document.getElementById("variablesInput");
-  const variablesPreview = document.getElementById("variablesPreview");
-  if (variablesInput) variablesInput.value = state.variablesText;
-  state.variables = {};
-  state.variablesDisplay = [];
-  if (variablesPreview) {
-    variablesPreview.textContent = "No variables defined.";
-  }
-  state.subsystemStack = [];
-  updateSubsystemNavUi();
-  renderer.clearWorkspace();
-  state.spawnIndex = 0;
-  state.loadingDiagram = false;
-  state.routingDirty = false;
-  state.dirtyBlocks.clear();
-  state.dirtyConnections.clear();
-  state.selectedId = null;
-  state.selectedConnection = null;
-  state.selectedIds.clear();
-  state.selectedConnections.clear();
-  currentFilePath = null;
-  if (statusEl) statusEl.textContent = "New diagram created";
-}
-
 function toYAML(data) {
   const lines = [];
   const isScalarArray = (value) =>
@@ -1425,84 +1115,8 @@ function parseYAML(text) {
   return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
 }
 
-const initViewBox = () => {
-  const { w, h } = getViewportSize();
-  if (viewBox.w === 0 || viewBox.h === 0) {
-    zoomScale = 1.5;
-    const vbW = w / zoomScale;
-    const vbH = h / zoomScale;
-    viewBox = {
-      x: (WORLD.w - vbW) / 2,
-      y: (WORLD.h - vbH) / 2,
-      w: vbW,
-      h: vbH,
-    };
-    svg.setAttribute("viewBox", `${viewBox.x} ${viewBox.y} ${viewBox.w} ${viewBox.h}`);
-    svg.dataset.worldWidth = String(WORLD.w);
-    svg.dataset.worldHeight = String(WORLD.h);
-    const canvas = document.getElementById("canvas");
-    updateGrid(canvas, zoomScale, viewBox);
-    updateStatusBar(null, null, zoomScale);
-    return;
-  }
-  const center = { x: viewBox.x + viewBox.w / 2, y: viewBox.y + viewBox.h / 2 };
-  viewBox = { x: center.x - (w / zoomScale) / 2, y: center.y - (h / zoomScale) / 2, w: w / zoomScale, h: h / zoomScale };
-  svg.setAttribute("viewBox", `${viewBox.x} ${viewBox.y} ${viewBox.w} ${viewBox.h}`);
-  const canvas = document.getElementById("canvas");
-  updateGrid(canvas, zoomScale, viewBox);
-  updateStatusBar(null, null, zoomScale);
-};
-
 function init() {
-  // 获取DOM元素
-  svg = document.getElementById("svgCanvas");
-  blockLibraryGroups = document.getElementById("blockLibraryGroups");
-  
-  console.log('init() - svg:', svg);
-  console.log('init() - blockLibraryGroups:', blockLibraryGroups);
-  console.log('init() - blockLibrary:', blockLibrary);
-  console.log('init() - blockLibrary type:', typeof blockLibrary);
-  console.log('init() - blockLibrary length:', blockLibrary ? blockLibrary.length : 'undefined');
-  
-  // 初始化renderer
-  if (svg) {
-    renderer = createRenderer({
-      svg,
-      blockLayer,
-      wireLayer,
-      overlayLayer,
-      state,
-      onSelectBlock: (blockId) => {
-        renderInspector(blockId);
-        focusPropertiesPanel();
-        updateStabilityPanel();
-      },
-      onSelectConnection: (connectionId) => {
-        renderInspector(connectionId);
-        focusPropertiesPanel();
-        updateStabilityPanel();
-      },
-      onOpenSubsystem: (block) => {
-        openSubsystemFromBlock(block);
-      },
-      onConnectionError: (message) => {
-        if (statusEl) statusEl.textContent = message;
-      },
-    });
-    console.log('init() - renderer initialized');
-  }
-  
-  if (blockLibraryGroups) {
-    console.log('init() - blockLibraryGroups.innerHTML before:', blockLibraryGroups.innerHTML);
-  }
-  
   updateSubsystemNavUi();
-  updateStatusBar("Ready", 0, 1);
-  
-  window.addEventListener("updateStatusBar", () => {
-    updateStatusBar();
-  });
-  
   if (subsystemUpBtn) {
     subsystemUpBtn.addEventListener("click", () => {
       closeSubsystemView();
@@ -1632,8 +1246,99 @@ function init() {
   applyTheme(themes[0].id);
   window.addEventListener("diagramChanged", updateStabilityPanel);
   updateStabilityPanel();
+  const normalizeExamplePath = (path) => {
+    if (!path) return "";
+    const trimmed = path.trim();
+    if (!trimmed) return "";
+    const withExt = /\.ya?ml$/i.test(trimmed) ? trimmed : `${trimmed}.yaml`;
+    if (withExt.includes("/")) return withExt;
+    return `examples/${withExt}`;
+  };
 
-  updateViewBox = (scale, center = null) => {
+  const loadExample = async (path) => {
+    const normalizedPath = normalizeExamplePath(path);
+    if (!normalizedPath) return;
+    const resolvedPath = new URL(normalizedPath, window.location.href).toString();
+    if (statusEl) statusEl.textContent = `Loading example: ${path}`;
+    try {
+      const response = await fetch(resolvedPath, { cache: "no-store" });
+      if (!response.ok) throw new Error(`Failed to load ${normalizedPath}`);
+      const text = await response.text();
+      const data = parseYAML(text);
+      loadDiagram(data);
+      if (statusEl) statusEl.textContent = "Loaded example";
+    } catch (error) {
+      if (statusEl) statusEl.textContent = `Example load error: ${error?.message || error}`;
+    }
+  };
+
+  const exampleFiles = [
+    "examples/inverted_pendulum.yaml",
+    "examples/emf.yaml",
+    "examples/antiwindup.yaml",
+    "examples/complementary.yaml",
+  ];
+  if (examplesList) {
+    examplesList.innerHTML = "";
+    exampleFiles.forEach((path) => {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "secondary";
+      const fallback = path.split("/").pop()?.replace(/_/g, " ").replace(/\.ya?ml$/i, "") || path;
+      button.textContent = fallback.replace(/\b\w/g, (char) => char.toUpperCase());
+      fetch(path, { cache: "no-store" })
+        .then((response) => (response.ok ? response.text() : null))
+        .then((text) => {
+          if (!text) return;
+          const data = parseYAML(text);
+          if (data?.name) button.textContent = String(data.name);
+        })
+        .catch(() => {});
+      button.addEventListener("click", () => loadExample(path));
+      examplesList.appendChild(button);
+    });
+  }
+  const url = new URL(window.location.href);
+  const exampleParam = url.searchParams.get("example");
+  const hashExample = window.location.hash.match(/example=([^&]+)/);
+  if (exampleParam) {
+    loadExample(decodeURIComponent(exampleParam));
+  } else if (hashExample) {
+    loadExample(decodeURIComponent(hashExample[1]));
+  } else {
+    const urlPath = decodeURIComponent(window.location.pathname || "");
+    if (/\.ya?ml$/i.test(urlPath)) {
+      const cleanedPath = urlPath.replace(/^\/+/, "");
+      loadExample(cleanedPath);
+    }
+  }
+  const initViewBox = () => {
+    const { w, h } = getViewportSize();
+    if (viewBox.w === 0 || viewBox.h === 0) {
+      zoomScale = 1.5;
+      const vbW = w / zoomScale;
+      const vbH = h / zoomScale;
+      viewBox = {
+        x: (WORLD.w - vbW) / 2,
+        y: (WORLD.h - vbH) / 2,
+        w: vbW,
+        h: vbH,
+      };
+      svg.setAttribute("viewBox", `${viewBox.x} ${viewBox.y} ${viewBox.w} ${viewBox.h}`);
+      svg.dataset.worldWidth = String(WORLD.w);
+      svg.dataset.worldHeight = String(WORLD.h);
+      const canvas = document.getElementById("canvas");
+      updateGrid(canvas, zoomScale, viewBox);
+      return;
+    }
+    const center = { x: viewBox.x + viewBox.w / 2, y: viewBox.y + viewBox.h / 2 };
+    viewBox = { x: center.x - (w / zoomScale) / 2, y: center.y - (h / zoomScale) / 2, w: w / zoomScale, h: h / zoomScale };
+    svg.setAttribute("viewBox", `${viewBox.x} ${viewBox.y} ${viewBox.w} ${viewBox.h}`);
+    const canvas = document.getElementById("canvas");
+    updateGrid(canvas, zoomScale, viewBox);
+  };
+
+  const updateViewBox = (scale, center = null) => {
     const { w, h } = getViewportSize();
     const currentCenter = center || { x: viewBox.x + viewBox.w / 2, y: viewBox.y + viewBox.h / 2 };
     const newW = w / scale;
@@ -1642,10 +1347,9 @@ function init() {
     svg.setAttribute("viewBox", `${viewBox.x} ${viewBox.y} ${viewBox.w} ${viewBox.h}`);
     const canvas = document.getElementById("canvas");
     updateGrid(canvas, scale, viewBox);
-    updateStatusBar(null, null, scale);
   };
 
-  updateViewBoxWithAnchor = (scale, anchor, baseViewBox = viewBox) => {
+  const updateViewBoxWithAnchor = (scale, anchor, baseViewBox = viewBox) => {
     const { w, h } = getViewportSize();
     const newW = w / scale;
     const newH = h / scale;
@@ -1786,11 +1490,11 @@ function init() {
 
   const downloadPdf = async (openTarget = null) => {
     try {
-      if (statusEl) statusEl.textContent = "Exporting PDF...";
+      statusEl.textContent = "Exporting PDF...";
       const { canvas } = await renderSvgToCanvas();
       canvas.toBlob((pngBlob) => {
         if (!pngBlob) {
-          if (statusEl) statusEl.textContent = "PDF export failed: PNG conversion failed";
+          statusEl.textContent = "PDF export failed: PNG conversion failed";
           return;
         }
         const pngUrl = URL.createObjectURL(pngBlob);
@@ -1805,12 +1509,13 @@ function init() {
           document.body.removeChild(link);
         }
         setTimeout(() => URL.revokeObjectURL(pngUrl), 10000);
-        if (statusEl) statusEl.textContent = "Image exported";
+        statusEl.textContent = "Image exported";
       }, "image/png");
     } catch (error) {
-      if (statusEl) statusEl.textContent = `Export failed: ${error?.message || error}`;
+      statusEl.textContent = `Export failed: ${error?.message || error}`;
     }
   };
+
 
   initViewBox();
 
@@ -1826,12 +1531,12 @@ function init() {
       const entries = state.variablesDisplay.join("\n");
       variablesPreview.textContent = entries || "No variables defined.";
     }
-    if (statusEl) statusEl.textContent = "Variables updated";
+    statusEl.textContent = "Variables updated";
     signalDiagramChanged();
   };
   if (applyVariablesBtn) applyVariablesBtn.addEventListener("click", updateVariables);
   if (variablesInput) variablesInput.addEventListener("change", updateVariables);
-  if (variablesInput) updateVariables();
+  updateVariables();
 
   renderBlockLibrary();
   if (blockLibraryGroups) {
@@ -1856,72 +1561,10 @@ function init() {
           };
         }
         renderer.createBlock(type, centerX + offset.x, centerY + offset.y, options);
-        if (statusEl) statusEl.textContent = `Added ${type}`;
+        statusEl.textContent = `Added ${type}`;
         updateStabilityPanel();
       } catch (error) {
-        if (statusEl) statusEl.textContent = `Error adding ${type}`;
-        if (errorBox) {
-          errorBox.textContent = `Error: ${error?.message || error}`;
-          errorBox.style.display = "block";
-        }
-      }
-    });
-
-    svg.addEventListener("dragover", (event) => {
-      event.preventDefault();
-      event.dataTransfer.dropEffect = "copy";
-    });
-
-    svg.addEventListener("drop", (event) => {
-      event.preventDefault();
-      console.log('drop triggered');
-      
-      const data = event.dataTransfer.getData("text/plain");
-      console.log('drop - data:', data);
-      if (!data) return;
-      
-      let draggedBlockType, draggedSubsystemKey;
-      try {
-        const parsed = JSON.parse(data);
-        draggedBlockType = parsed.type;
-        draggedSubsystemKey = parsed.subsystemKey || "";
-      } catch (e) {
-        console.error('drop - failed to parse data:', e);
-        return;
-      }
-      
-      console.log('drop - draggedBlockType:', draggedBlockType);
-      
-      console.log('drop - clientX:', event.clientX, 'clientY:', event.clientY);
-      const svgPoint = renderer.clientToSvg(event.clientX, event.clientY);
-      console.log('drop - svgPoint.x:', svgPoint.x, 'svgPoint.y:', svgPoint.y);
-      
-      const template = blockTemplates[draggedBlockType];
-      const blockWidth = template ? template.width : 80;
-      const blockHeight = template ? template.height : 80;
-      const centerX = svgPoint.x - blockWidth / 2;
-      const centerY = svgPoint.y - blockHeight / 2;
-      console.log('drop - centerX:', centerX, 'centerY:', centerY);
-      
-      try {
-        const options = {};
-        if (draggedBlockType === "subsystem" && draggedSubsystemKey) {
-          const spec = state.loadedSubsystems.get(draggedSubsystemKey);
-          if (!spec) throw new Error("Subsystem spec not found");
-          options.params = {
-            name: spec.name,
-            externalInputs: deepClone(spec.externalInputs),
-            externalOutputs: deepClone(spec.externalOutputs),
-            subsystem: deepClone(spec),
-          };
-        }
-        console.log('drop - calling createBlock with type:', draggedBlockType, 'x:', centerX, 'y:', centerY);
-        renderer.createBlock(draggedBlockType, centerX, centerY, options);
-        if (statusEl) statusEl.textContent = `Added ${draggedBlockType}`;
-        updateStabilityPanel();
-      } catch (error) {
-        console.error('drop - error:', error);
-        if (statusEl) statusEl.textContent = `Error adding ${draggedBlockType}`;
+        statusEl.textContent = `Error adding ${type}`;
         if (errorBox) {
           errorBox.textContent = `Error: ${error?.message || error}`;
           errorBox.style.display = "block";
@@ -1956,7 +1599,7 @@ function init() {
     const aria = running ? "Pause" : "Run";
     const title = running ? "Pause" : "Run";
     const iconPath = running ? "M7 5h4v14H7zM13 5h4v14h-4z" : "M7 5l12 7-12 7z";
-    const targets = runButtons.length ? Array.from(runButtons) : [];
+    const targets = runButtons.length ? Array.from(runButtons) : (runBtn ? [runBtn] : []);
     targets.forEach((button) => {
       if (!(button instanceof HTMLElement)) return;
       button.setAttribute("aria-label", aria);
@@ -1988,9 +1631,6 @@ function init() {
           get pauseRequested() {
             return state.pauseRequested === true;
           },
-        },
-        onStatusUpdate: (status, time) => {
-          updateStatusBar(status, time);
         },
       });
       if (result?.status === "paused") {
@@ -2064,9 +1704,13 @@ function init() {
   }
   if (runButtons.length) {
     runButtons.forEach((button) => button.addEventListener("click", handleRun));
+  } else if (runBtn) {
+    runBtn.addEventListener("click", handleRun);
   }
-  if (resetButtons.length) {
-    resetButtons.forEach((button) => button.addEventListener("click", handleReset));
+  if (resetSimBtn) {
+    resetSimBtn.addEventListener("click", () => {
+      handleReset();
+    });
   }
 
   if (codegenBtn) {
@@ -2105,6 +1749,7 @@ function init() {
       }
     });
   }
+  clearBtn.addEventListener("click", clearWorkspace);
 
   if (saveBtn) {
     saveBtn.addEventListener("click", () => {
@@ -2118,7 +1763,7 @@ function init() {
       link.click();
       document.body.removeChild(link);
       URL.revokeObjectURL(url);
-      if (statusEl) statusEl.textContent = "Saved diagram";
+      statusEl.textContent = "Saved diagram";
     });
   }
 
@@ -2133,9 +1778,9 @@ function init() {
           const text = String(reader.result || "");
           const data = parseYAML(text);
           loadDiagram(data);
-          if (statusEl) statusEl.textContent = "Loaded diagram";
+          statusEl.textContent = "Loaded diagram";
         } catch (error) {
-          if (statusEl) statusEl.textContent = `Load error: ${error?.message || error}`;
+          statusEl.textContent = `Load error: ${error?.message || error}`;
         }
       };
       reader.readAsText(file);
@@ -2164,9 +1809,9 @@ function init() {
           }
           state.loadedSubsystems.set(key, spec);
           renderBlockLibrary();
-          if (statusEl) statusEl.textContent = `Loaded subsystem: ${spec.name}`;
+          statusEl.textContent = `Loaded subsystem: ${spec.name}`;
         } catch (error) {
-          if (statusEl) statusEl.textContent = `Subsystem load error: ${error?.message || error}`;
+          statusEl.textContent = `Subsystem load error: ${error?.message || error}`;
         }
       };
       reader.readAsText(file);
@@ -2174,134 +1819,23 @@ function init() {
     });
   }
 
-  let currentFilePath = null;
-
-  const isElectron = typeof window !== 'undefined' && window.electron;
-
-  if (isElectron) {
-    window.electron.onFileOpened(({ filePath, content, fileName }) => {
-      try {
-        const data = parseYAML(content);
-        loadDiagram(data);
-        currentFilePath = filePath;
-        if (statusEl) statusEl.textContent = `Loaded: ${fileName}`;
-      } catch (error) {
-        if (statusEl) statusEl.textContent = `Load error: ${error?.message || error}`;
-      }
-    });
-
-    window.electron.onFileSaveRequest(async ({ filePath }) => {
-      const yaml = toYAML(serializeDiagram(state));
-      if (filePath) {
-        const result = await window.electron.saveFile(yaml, filePath);
-        if (result.success === true) {
-          currentFilePath = result.filePath;
-          if (statusEl) statusEl.textContent = `Saved: ${filePath}`;
-        } else {
-          if (statusEl) statusEl.textContent = `Save error: ${result.error}`;
-        }
-      } else {
-        const defaultName = `${sanitizeFilename(state.diagramName)}.yaml`;
-        const result = await window.electron.saveFileAs(yaml, defaultName);
-        if (result.success === true && !result.canceled) {
-          currentFilePath = result.filePath;
-          if (statusEl) statusEl.textContent = `Saved: ${result.filePath}`;
-        } else if (!result.canceled) {
-          if (statusEl) statusEl.textContent = `Save error: ${result.error}`;
-        }
-      }
-    });
-
-    window.electron.onFileSaveAsRequest(async () => {
-      const yaml = toYAML(serializeDiagram(state));
-      const defaultName = `${sanitizeFilename(state.diagramName)}.yaml`;
-      const result = await window.electron.saveFileAs(yaml, defaultName);
-      if (result.success && !result.canceled) {
-        currentFilePath = result.filePath;
-        if (statusEl) statusEl.textContent = `Saved: ${result.filePath}`;
-      } else if (!result.canceled) {
-        if (statusEl) statusEl.textContent = `Save error: ${result.error}`;
-      }
-    });
-  } else {
-    if (fileOpenInput) {
-      fileOpenInput.addEventListener("change", () => {
-        const file = fileOpenInput.files?.[0];
-        if (!file) return;
-        const reader = new FileReader();
-        reader.onload = () => {
-          try {
-            const text = String(reader.result || "");
-            const data = parseYAML(text);
-            loadDiagram(data);
-            currentFilePath = file.name;
-            if (statusEl) statusEl.textContent = `Loaded: ${file.name}`;
-          } catch (error) {
-            if (statusEl) statusEl.textContent = `Load error: ${error?.message || error}`;
-          }
-        };
-        reader.readAsText(file);
-        fileOpenInput.value = "";
-      });
-    }
-  }
-
-  if (fileSaveAsBtn) {
-      fileSaveAsBtn.addEventListener("click", () => {
-        const yaml = toYAML(serializeDiagram(state));
-        const blob = new Blob([yaml], { type: "text/yaml" });
-        const url = URL.createObjectURL(blob);
-        const link = document.createElement("a");
-        link.href = url;
-        link.download = `${sanitizeFilename(state.diagramName)}.yaml`;
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-        URL.revokeObjectURL(url);
-        if (statusEl) statusEl.textContent = "Saved diagram";
-      });
-    }
-
-    const menuTrigger = document.querySelector(".menu-trigger");
-    const menu = document.querySelector(".menu");
-    
-    if (menuTrigger && menu) {
-      menuTrigger.addEventListener("click", (e) => {
-        e.stopPropagation();
-        menu.classList.toggle("active");
-      });
-      
-      document.addEventListener("click", () => {
-        menu.classList.remove("active");
-      });
-      
-      menu.addEventListener("click", (e) => {
-        e.stopPropagation();
-      });
-    }
-}
-
-
   const handleDeleteSelection = () => {
     if (state.selectedId) {
       renderer.deleteBlock(state.selectedId);
       renderer.selectBlock(null);
       renderInspector(null);
-      if (statusEl) statusEl.textContent = "Block deleted";
+      statusEl.textContent = "Block deleted";
       updateStabilityPanel();
     } else if (state.selectedConnection) {
       renderer.deleteConnection(state.selectedConnection);
       renderer.selectConnection(null);
       renderInspector(null);
-      if (statusEl) statusEl.textContent = "Wire deleted";
+      statusEl.textContent = "Wire deleted";
       updateStabilityPanel();
     }
   };
 
-  if (deleteSelectionBtn) {
-    deleteSelectionBtn.addEventListener("click", handleDeleteSelection);
-  }
-  
+  deleteSelectionBtn.addEventListener("click", handleDeleteSelection);
   const moveSelectedBlocks = (dx, dy) => {
     const selectedIds = state.selectedIds && state.selectedIds.size > 0 ? state.selectedIds : null;
     const ids = selectedIds && selectedIds.has(state.selectedId)
@@ -2352,8 +1886,7 @@ function init() {
     }
   });
 
-  if (rotateSelectionBtn) {
-    rotateSelectionBtn.addEventListener("click", () => {
+  rotateSelectionBtn.addEventListener("click", () => {
     if (!state.selectedId) return;
     const block = state.blocks.get(state.selectedId);
     if (!block) return;
@@ -2369,166 +1902,134 @@ function init() {
   const zoomInBtn = document.getElementById("zoomInBtn");
   const zoomOutBtn = document.getElementById("zoomOutBtn");
   const printBtn = document.getElementById("printBtn");
-  console.log('init() - homeBtn:', homeBtn);
-  console.log('init() - zoomInBtn:', zoomInBtn);
-  console.log('init() - zoomOutBtn:', zoomOutBtn);
-  console.log('init() - printBtn:', printBtn);
-  if (printBtn) {
-    printBtn.addEventListener("click", () => {
-      window.print();
-    });
-  }
 
-  if (homeBtn) {
-    console.log('init() - Adding click listener to homeBtn');
-    homeBtn.addEventListener("click", fitToDiagram);
-  }
+  if (homeBtn) homeBtn.addEventListener("click", fitToDiagram);
   if (zoomInBtn) {
-    console.log('init() - Adding click listener to zoomInBtn');
     zoomInBtn.addEventListener("click", () => {
-      console.log('zoomInBtn clicked, current zoomScale:', zoomScale);
       zoomScale = Math.max(0.1, Math.min(3, zoomScale * 1.1));
       const center = { x: viewBox.x + viewBox.w / 2, y: viewBox.y + viewBox.h / 2 };
       updateViewBox(zoomScale, center);
-      updateStatusBar(null, null, zoomScale);
-      console.log('zoomInBtn - new zoomScale:', zoomScale);
     });
   }
   if (zoomOutBtn) {
-    console.log('init() - Adding click listener to zoomOutBtn');
     zoomOutBtn.addEventListener("click", () => {
-      console.log('zoomOutBtn clicked, current zoomScale:', zoomScale);
       zoomScale = Math.max(0.1, Math.min(3, zoomScale / 1.1));
       const center = { x: viewBox.x + viewBox.w / 2, y: viewBox.y + viewBox.h / 2 };
       updateViewBox(zoomScale, center);
-      updateStatusBar(null, null, zoomScale);
-      console.log('zoomOutBtn - new zoomScale:', zoomScale);
     });
   }
   if (printBtn) {
     printBtn.remove();
   }
 
-  if (svg) {
-    console.log('init() - Setting up wheel event on svg:', svg);
-    svg.addEventListener(
-      "wheel",
-      (event) => {
-        console.log('wheel event triggered, deltaY:', event.deltaY);
-        event.preventDefault();
-        svg.classList.add('zooming');
-        const baseViewBox = { ...viewBox };
-        const delta = Math.sign(event.deltaY);
-        const factor = delta > 0 ? 0.9 : 1.1;
-        zoomScale = Math.max(0.1, Math.min(3, zoomScale * factor));
-        const anchor = renderer.clientToSvg(event.clientX, event.clientY);
-        updateViewBoxWithAnchor(zoomScale, anchor, baseViewBox);
-        updateStatusBar(null, null, zoomScale);
-        console.log('wheel event - new zoomScale:', zoomScale);
-        setTimeout(() => svg.classList.remove('zooming'), 100);
-      },
-      { passive: false }
-    );
-
-    console.log('init() - Setting up pointerdown event on svg:', svg);
-    svg.addEventListener("pointerdown", (event) => {
-      console.log('pointerdown event triggered, button:', event.button, 'target:', event.target);
-      pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
-      if (pointers.size === 2) {
-        const pts = Array.from(pointers.values());
-        const dist = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
-        const center = { x: viewBox.x + viewBox.w / 2, y: viewBox.y + viewBox.h / 2 };
-        pinchStart = { dist, scale: zoomScale, center };
-        state.isPinching = true;
-        panStart = null;
-        return;
-      }
-      if (event.button !== 0 && event.button !== 1) return;
-      if (event.target.closest(".drag-handle") || event.target.closest(".port")) return;
-      if (event.ctrlKey && event.target === svg) {
-        renderer.startMarqueeSelection(event);
-        return;
-      }
-      if (event.target !== svg && event.button === 0) return;
+  svg.addEventListener(
+    "wheel",
+    (event) => {
       event.preventDefault();
-      panStart = {
-        clientX: event.clientX,
-        clientY: event.clientY,
-        viewBox: { ...viewBox },
-      };
-      svg.setPointerCapture(event.pointerId);
-      state.isPanning = true;
-      svg.classList.add('panning');
-    }, { passive: false });
+      const baseViewBox = { ...viewBox };
+      const delta = Math.sign(event.deltaY);
+      const factor = delta > 0 ? 0.9 : 1.1;
+      zoomScale = Math.max(0.1, Math.min(3, zoomScale * factor));
+      const anchor = renderer.clientToSvg(event.clientX, event.clientY);
+      updateViewBoxWithAnchor(zoomScale, anchor, baseViewBox);
+    },
+    { passive: false }
+  );
 
-    svg.addEventListener("pointermove", (event) => {
-      if (!pointers.has(event.pointerId)) return;
-      pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
-      if (pinchStart && pointers.size === 2) {
-        const pts = Array.from(pointers.values());
-        const dist = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
-        const scale = Math.max(0.1, Math.min(3, pinchStart.scale * (dist / pinchStart.dist)));
-        zoomScale = scale;
-        updateViewBox(scale, pinchStart.center);
-        return;
-      }
-      if (panStart && !state.isPinching) {
-        event.preventDefault();
-        pendingPan = { clientX: event.clientX, clientY: event.clientY };
-        if (!panRaf) {
-          panRaf = requestAnimationFrame(() => {
-            if (!panStart || !pendingPan) {
-              panRaf = null;
-              return;
-            }
-            const dxClient = panStart.clientX - pendingPan.clientX;
-            const dyClient = panStart.clientY - pendingPan.clientY;
-            const scaleX = viewBox.w / (svg.clientWidth || 1);
-            const scaleY = viewBox.h / (svg.clientHeight || 1);
-            const dx = dxClient * scaleX;
-            const dy = dyClient * scaleY;
-            viewBox = {
-              x: panStart.viewBox.x + dx,
-              y: panStart.viewBox.y + dy,
-              w: panStart.viewBox.w,
-              h: panStart.viewBox.h,
-            };
-            svg.setAttribute("viewBox", `${viewBox.x} ${viewBox.y} ${viewBox.w} ${viewBox.h}`);
-            updateGrid(document.getElementById("canvas"), zoomScale, viewBox);
-            panRaf = null;
-          });
-        }
-      }
-    }, { passive: false });
-
-    const endPinch = () => {
-      pointers.clear();
-      pinchStart = null;
-      state.isPinching = false;
+  svg.addEventListener("pointerdown", (event) => {
+    pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+    if (pointers.size === 2) {
+      const pts = Array.from(pointers.values());
+      const dist = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
+      const center = { x: viewBox.x + viewBox.w / 2, y: viewBox.y + viewBox.h / 2 };
+      pinchStart = { dist, scale: zoomScale, center };
+      state.isPinching = true;
       panStart = null;
-      state.isPanning = false;
-      pendingPan = null;
-      if (panRaf) cancelAnimationFrame(panRaf);
-      panRaf = null;
-      svg.classList.remove('panning');
-      if (state.routingDirty) {
-        renderer.updateConnections(true);
-      }
+      return;
+    }
+    if (event.button !== 0) return;
+    if (event.target.closest(".drag-handle") || event.target.closest(".port")) return;
+    if (event.ctrlKey && event.target === svg) {
+      renderer.startMarqueeSelection(event);
+      return;
+    }
+    if (event.target !== svg) return;
+    event.preventDefault();
+    panStart = {
+      clientX: event.clientX,
+      clientY: event.clientY,
+      viewBox: { ...viewBox },
     };
+    svg.setPointerCapture(event.pointerId);
+    state.isPanning = true;
+  }, { passive: false });
 
-    svg.addEventListener("pointerup", endPinch);
-    svg.addEventListener("pointercancel", endPinch);
-
-    svg.addEventListener("click", (event) => {
-      if (state.suppressNextCanvasClick) {
-        state.suppressNextCanvasClick = false;
-        return;
+  svg.addEventListener("pointermove", (event) => {
+    if (!pointers.has(event.pointerId)) return;
+    pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+    if (pinchStart && pointers.size === 2) {
+      const pts = Array.from(pointers.values());
+      const dist = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
+      const scale = Math.max(0.1, Math.min(3, pinchStart.scale * (dist / pinchStart.dist)));
+      zoomScale = scale;
+      updateViewBox(scale, pinchStart.center);
+      return;
+    }
+    if (panStart && !state.isPinching) {
+      event.preventDefault();
+      pendingPan = { clientX: event.clientX, clientY: event.clientY };
+      if (!panRaf) {
+        panRaf = requestAnimationFrame(() => {
+          if (!panStart || !pendingPan) {
+            panRaf = null;
+            return;
+          }
+          const dxClient = panStart.clientX - pendingPan.clientX;
+          const dyClient = panStart.clientY - pendingPan.clientY;
+          const scaleX = viewBox.w / (svg.clientWidth || 1);
+          const scaleY = viewBox.h / (svg.clientHeight || 1);
+          const dx = dxClient * scaleX;
+          const dy = dyClient * scaleY;
+          viewBox = {
+            x: panStart.viewBox.x + dx,
+            y: panStart.viewBox.y + dy,
+            w: panStart.viewBox.w,
+            h: panStart.viewBox.h,
+          };
+          svg.setAttribute("viewBox", `${viewBox.x} ${viewBox.y} ${viewBox.w} ${viewBox.h}`);
+          updateGrid(document.getElementById("canvas"), zoomScale, viewBox);
+          panRaf = null;
+        });
       }
-      renderer.clearPending();
-      renderer.selectBlock(null);
-      renderer.selectConnection(null);
-    });
-  }
+    }
+  }, { passive: false });
+
+  const endPinch = () => {
+    pointers.clear();
+    pinchStart = null;
+    state.isPinching = false;
+    panStart = null;
+    state.isPanning = false;
+    pendingPan = null;
+    if (panRaf) cancelAnimationFrame(panRaf);
+    panRaf = null;
+    if (state.routingDirty) {
+      renderer.updateConnections(true);
+    }
+  };
+
+  svg.addEventListener("pointerup", endPinch);
+  svg.addEventListener("pointercancel", endPinch);
+
+  svg.addEventListener("click", (event) => {
+    if (state.suppressNextCanvasClick) {
+      state.suppressNextCanvasClick = false;
+      return;
+    }
+    renderer.clearPending();
+    renderer.selectBlock(null);
+    renderer.selectConnection(null);
+  });
 
   window.addEventListener("resize", () => {
     initViewBox();
@@ -2709,435 +2210,7 @@ function init() {
 
   };
   initMobileCarousel();
+
 }
 
-function initVSCodeUI() {
-  init(); // try to initialize the app first
-
-  console.log('initVSCodeUI() 开始执行');
-  
-  const savedTheme = localStorage.getItem('theme');
-  if (savedTheme) {
-    document.documentElement.setAttribute('data-theme', savedTheme);
-  }
-  
-  const activityIcons = document.querySelectorAll('.activity-icon');
-  const sidebarPanels = document.querySelectorAll('.sidebar-panel');
-  const activitybar = document.querySelector('.activity-bar');
-  const sidebar = document.querySelector('.sidebar');
-  
-  console.log('initVSCodeUI() - activityIcons:', activityIcons.length);
-  console.log('initVSCodeUI() - sidebarPanels:', sidebarPanels.length);
-  
-  // 双击activitybar收起/展开侧边栏
-  console.log('activitybar:', activitybar);
-  console.log('sidebar:', sidebar);
-  console.log('sidebar.classList before:', sidebar.classList);
-  
-  activitybar.addEventListener('dblclick', (e) => {
-    console.log('double click on activitybar, target:', e.target);
-    console.log('sidebar.classList before toggle:', sidebar.classList);
-    sidebar.classList.toggle('collapsed');
-    console.log('sidebar.classList after toggle:', sidebar.classList);
-    console.log('sidebar.offsetWidth after toggle:', sidebar.offsetWidth);
-    
-    // 保存collapsed状态
-    localStorage.setItem('sidebarCollapsed', sidebar.classList.contains('collapsed'));
-    
-    // 如果展开，恢复保存的宽度
-    if (!sidebar.classList.contains('collapsed')) {
-      const savedWidth = localStorage.getItem('sidebarWidth');
-      if (savedWidth) {
-        sidebar.style.width = savedWidth;
-      }
-    }
-  });
-  
-  // 拖动调整侧边栏宽度
-  const resizeHandle = document.querySelector('.sidebar-resize-handle');
-  let isResizing = false;
-  let startX = 0;
-  let startWidth = 0;
-  
-  if (resizeHandle) {
-    resizeHandle.addEventListener('mousedown', (e) => {
-      isResizing = true;
-      startX = e.clientX;
-      startWidth = sidebar.offsetWidth;
-      document.body.style.cursor = 'col-resize';
-      document.body.style.userSelect = 'none';
-      sidebar.style.transition = 'none';
-      e.preventDefault();
-    });
-    
-    document.addEventListener('mousemove', (e) => {
-      if (!isResizing) return;
-      const deltaX = e.clientX - startX;
-      const newWidth = Math.max(200, Math.min(600, startWidth + deltaX));
-      sidebar.style.width = `${newWidth}px`;
-    });
-    
-    document.addEventListener('mouseup', () => {
-      if (isResizing) {
-        isResizing = false;
-        document.body.style.cursor = '';
-        document.body.style.userSelect = '';
-        sidebar.style.transition = 'width 0.15s ease';
-        localStorage.setItem('sidebarWidth', sidebar.style.width);
-      }
-    });
-  }
-  
-  // 恢复保存的侧边栏宽度
-  const savedWidth = localStorage.getItem('sidebarWidth');
-  const savedCollapsed = localStorage.getItem('sidebarCollapsed');
-  if (savedCollapsed === 'true') {
-    sidebar.classList.add('collapsed');
-  } else if (savedWidth) {
-    sidebar.style.width = savedWidth;
-  }
-  
-  activityIcons.forEach(icon => {
-    icon.addEventListener('click', () => {
-      const panelId = icon.dataset.panel;
-      console.log('面板点击 - panelId:', panelId);
-      
-      if (!panelId) return;
-      
-      activityIcons.forEach(i => i.classList.remove('active'));
-      icon.classList.add('active');
-      
-      sidebarPanels.forEach(panel => {
-        console.log('检查面板 - panel.id:', panel.id, '目标:', `panel-${panelId}`);
-        panel.classList.remove('active');
-        if (panel.id === `panel-${panelId}`) {
-          panel.classList.add('active');
-          console.log('激活面板:', panel.id);
-        }
-      });
-    });
-  });
-  
-  console.log('initVSCodeUI() - 面板切换已设置');
-  
-  const sidebarSectionTitles = document.querySelectorAll('.sidebar-section-title');
-  sidebarSectionTitles.forEach(title => {
-    title.addEventListener('click', () => {
-      title.classList.toggle('collapsed');
-      const content = title.nextElementSibling;
-      if (content && content.classList.contains('sidebar-section-content')) {
-        content.classList.toggle('collapsed');
-      }
-    });
-  });
-  
-  const sidebarItems = document.querySelectorAll('.sidebar-item');
-  sidebarItems.forEach(item => {
-    item.addEventListener('click', () => {
-      sidebarItems.forEach(i => i.classList.remove('selected'));
-      item.classList.add('selected');
-    });
-  });
-  
-  const menubarItems = document.querySelectorAll('.menubar > .menubar-item');
-  const menubarDropdowns = document.querySelectorAll('.menubar-dropdown');
-  
-  menubarItems.forEach(item => {
-    item.addEventListener('click', (e) => {
-      const menu = item.dataset.menu;
-      
-      e.stopPropagation();
-      
-      if (menu) {
-        const dropdown = item.querySelector('.menubar-dropdown');
-        if (dropdown) {
-          const isVisible = dropdown.style.display === 'block';
-          menubarDropdowns.forEach(d => d.style.display = 'none');
-          dropdown.style.display = isVisible ? 'none' : 'block';
-        }
-      }
-    });
-  });
-  
-  document.addEventListener('click', (e) => {
-    menubarDropdowns.forEach(dropdown => dropdown.style.display = 'none');
-  });
-  
-  menubarDropdowns.forEach(dropdown => {
-    dropdown.addEventListener('click', (e) => {
-      e.stopPropagation();
-    });
-  });
-  
-  const menubarDropdownItems = document.querySelectorAll('.menubar-dropdown .menubar-item');
-  menubarDropdownItems.forEach(item => {
-    item.addEventListener('click', (e) => {
-      e.stopPropagation();
-      const action = item.dataset.action;
-      if (action) {
-        menubarDropdowns.forEach(dropdown => dropdown.style.display = 'none');
-        handleMenuAction(action);
-      }
-    });
-  });
-  
-  function handleMenuAction(action) {
-    switch (action) {
-      case 'new':
-        newDiagram();
-        break;
-      case 'open':
-        if (window.electron) {
-          window.electron.openFile().then(result => {
-            if (result.success === true) {
-              try {
-                const data = parseYAML(result.content);
-                loadDiagram(data);
-                currentFilePath = result.fileName;
-                if (statusEl) statusEl.textContent = `Loaded: ${result.fileName}`;
-              } catch (error) {
-                if (statusEl) statusEl.textContent = `Load error: ${error?.message || error}`;
-              }
-            }
-          }).catch(error => {
-            if (statusEl) statusEl.textContent = `Open error: ${error?.message || error}`;
-          });
-        } else {
-          fileOpenInput.click();
-        }
-        break;
-      case 'save':
-        const yaml = toYAML(serializeDiagram(state));
-        if (window.electron) {
-          if (currentFilePath) {
-            window.electron.saveFile(yaml, currentFilePath);
-          } else {
-            window.electron.saveFileAs(yaml, `${sanitizeFilename(state.diagramName)}.yaml`);
-          }
-        } else {
-          const blob = new Blob([yaml], { type: "text/yaml" });
-          const url = URL.createObjectURL(blob);
-          const link = document.createElement("a");
-          link.href = url;
-          link.download = currentFilePath || `${sanitizeFilename(state.diagramName)}.yaml`;
-          document.body.appendChild(link);
-          link.click();
-          document.body.removeChild(link);
-          URL.revokeObjectURL(url);
-        }
-        break;
-      case 'saveAs':
-        if (window.electron) {
-          const yaml = toYAML(serializeDiagram(state));
-          window.electron.saveFileAs(yaml, `${sanitizeFilename(state.diagramName)}.yaml`);
-        } else {
-          const yaml = toYAML(serializeDiagram(state));
-          const blob = new Blob([yaml], { type: "text/yaml" });
-          const url = URL.createObjectURL(blob);
-          const link = document.createElement("a");
-          link.href = url;
-          link.download = `${sanitizeFilename(state.diagramName)}.yaml`;
-          document.body.appendChild(link);
-          link.click();
-          document.body.removeChild(link);
-          URL.revokeObjectURL(url);
-        }
-        break;
-      case 'exit':
-        if (window.electron) {
-          window.electron.closeWindow();
-        }
-        break;
-      case 'undo':
-        if (deleteSelectionBtn) {
-          break;
-        }
-        break;
-      case 'redo':
-        break;
-      case 'delete':
-        if (deleteSelectionBtn) deleteSelectionBtn.click();
-        break;
-      case 'resetView':
-        if (homeBtn) homeBtn.click();
-        break;
-      case 'zoomIn':
-        if (zoomInBtn) zoomInBtn.click();
-        break;
-      case 'zoomOut':
-        if (zoomOutBtn) zoomOutBtn.click();
-        break;
-      case 'theme-dark':
-        document.documentElement.setAttribute('data-theme', 'dark');
-        localStorage.setItem('theme', 'dark');
-        break;
-      case 'theme-light':
-        document.documentElement.setAttribute('data-theme', 'light');
-        localStorage.setItem('theme', 'light');
-        break;
-      case 'theme-monokai':
-        document.documentElement.setAttribute('data-theme', 'monokai');
-        localStorage.setItem('theme', 'monokai');
-        break;
-      case 'theme-dracula':
-        document.documentElement.setAttribute('data-theme', 'dracula');
-        localStorage.setItem('theme', 'dracula');
-        break;
-      case 'about':
-        const aboutModal = document.getElementById('aboutModal');
-        if (aboutModal) {
-          aboutModal.classList.add('show');
-        }
-        break;
-    }
-  }
-  
-  const minimizeBtn = document.getElementById('minimizeBtn');
-  const maximizeBtn = document.getElementById('maximizeBtn');
-  const closeBtn = document.getElementById('closeBtn');
-  
-  if (window.electron) {
-    console.log('Window control buttons:', { minimizeBtn, maximizeBtn, closeBtn });
-    console.log('Electron API:', window.electron);
-    
-    if (minimizeBtn) {
-      minimizeBtn.addEventListener('click', (e) => {
-        console.log('Minimize button clicked');
-        e.preventDefault();
-        e.stopPropagation();
-        window.electron.minimizeWindow();
-      });
-    }
-    
-    if (maximizeBtn) {
-      maximizeBtn.addEventListener('click', (e) => {
-        console.log('Maximize button clicked');
-        e.preventDefault();
-        e.stopPropagation();
-        window.electron.maximizeWindow();
-      });
-    }
-    
-    if (closeBtn) {
-      closeBtn.addEventListener('click', (e) => {
-        console.log('Close button clicked');
-        e.preventDefault();
-        e.stopPropagation();
-        window.electron.closeWindow();
-      });
-    }
-  } else {
-    console.log('Electron API not available, using browser fallback');
-    
-    if (minimizeBtn) {
-      minimizeBtn.addEventListener('click', (e) => {
-        console.log('Minimize button clicked (browser)');
-        e.preventDefault();
-        e.stopPropagation();
-        document.body.style.display = 'none';
-        const restoreBtn = document.createElement('button');
-        restoreBtn.textContent = 'Restore';
-        restoreBtn.style.cssText = 'position:fixed;top:10px;left:10px;z-index:9999;padding:10px 20px;background:#007acc;color:white;border:none;border-radius:4px;cursor:pointer;';
-        restoreBtn.onclick = () => {
-          document.body.style.display = 'flex';
-          restoreBtn.remove();
-        };
-        document.body.appendChild(restoreBtn);
-      });
-    }
-    
-    if (maximizeBtn) {
-      maximizeBtn.addEventListener('click', (e) => {
-        console.log('Maximize button clicked (browser)');
-        e.preventDefault();
-        e.stopPropagation();
-        if (!document.fullscreenElement) {
-          document.documentElement.requestFullscreen().catch(err => {
-            console.log('Fullscreen error:', err);
-          });
-        } else {
-          document.exitFullscreen();
-        }
-      });
-    }
-    
-    if (closeBtn) {
-      closeBtn.addEventListener('click', (e) => {
-        console.log('Close button clicked (browser)');
-        e.preventDefault();
-        e.stopPropagation();
-        if (confirm('Are you sure you want to close Vibesim?')) {
-          window.close();
-        }
-      });
-    }
-  }
-  
-  // About modal事件处理
-  const aboutModal = document.getElementById('aboutModal');
-  const closeAboutModalBtn = document.getElementById('closeAboutModalBtn');
-  const closeAboutModal = document.getElementById('closeAboutModal');
-  
-  if (aboutModal && closeAboutModalBtn) {
-    closeAboutModalBtn.addEventListener('click', () => {
-      aboutModal.classList.remove('show');
-    });
-  }
-  
-  if (aboutModal && closeAboutModal) {
-    closeAboutModal.addEventListener('click', () => {
-      aboutModal.classList.remove('show');
-    });
-  }
-  
-  if (aboutModal) {
-    aboutModal.addEventListener('click', (e) => {
-      if (e.target === aboutModal) {
-        aboutModal.classList.remove('show');
-      }
-    });
-  }
-  
-  // 状态栏按钮事件处理
-  const homeBtn = document.getElementById('homeBtn');
-  const zoomInBtn = document.getElementById('zoomInBtn');
-  const zoomOutBtn = document.getElementById('zoomOutBtn');
-  
-  console.log('initVSCodeUI() - homeBtn:', homeBtn);
-  console.log('initVSCodeUI() - zoomInBtn:', zoomInBtn);
-  console.log('initVSCodeUI() - zoomOutBtn:', zoomOutBtn);
-  
-  if (homeBtn) {
-    console.log('initVSCodeUI() - Adding click listener to homeBtn');
-    homeBtn.addEventListener('click', () => {
-      console.log('homeBtn clicked');
-      fitToDiagram();
-    });
-  }
-  
-  if (zoomInBtn) {
-    console.log('initVSCodeUI() - Adding click listener to zoomInBtn');
-    zoomInBtn.addEventListener('click', () => {
-      console.log('zoomInBtn clicked, current zoomScale:', zoomScale);
-      zoomScale = Math.max(0.1, Math.min(3, zoomScale * 1.1));
-      const center = { x: viewBox.x + viewBox.w / 2, y: viewBox.y + viewBox.h / 2 };
-      updateViewBox(zoomScale, center);
-      updateStatusBar(null, null, zoomScale);
-      console.log('zoomInBtn - new zoomScale:', zoomScale);
-    });
-  }
-  
-  if (zoomOutBtn) {
-    console.log('initVSCodeUI() - Adding click listener to zoomOutBtn');
-    zoomOutBtn.addEventListener('click', () => {
-      console.log('zoomOutBtn clicked, current zoomScale:', zoomScale);
-      zoomScale = Math.max(0.1, Math.min(3, zoomScale / 1.1));
-      const center = { x: viewBox.x + viewBox.w / 2, y: viewBox.y + viewBox.h / 2 };
-      updateViewBox(zoomScale, center);
-      updateStatusBar(null, null, zoomScale);
-      console.log('zoomOutBtn - new zoomScale:', zoomScale);
-    });
-  }
-}
-// 初始化VSCode UI
-document.addEventListener('DOMContentLoaded', initVSCodeUI);
+init();

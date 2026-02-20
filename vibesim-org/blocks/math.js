@@ -1,0 +1,184 @@
+import { exprToLatex } from "../utils/expr.js";
+
+export const mathLibrary = {
+  id: "math",
+  title: "Math",
+  blocks: [
+    { type: "gain", label: "Gain" },
+    { type: "sum", label: "Addition" },
+    { type: "mult", label: "Multiplication" },
+    { type: "abs", label: "Absolute value" },
+    { type: "min", label: "Min" },
+    { type: "max", label: "Max" },
+    { type: "userFunc", label: "User defined function" },
+  ],
+};
+
+export const createMathTemplates = (helpers) => {
+  const { createSvgElement, renderTeXMath, GRID_SIZE } = helpers;
+  return {
+    sum: {
+      width: 20,
+      height: 20,
+      inputs: [
+        { x: 10 - GRID_SIZE * 2, y: 10, side: "left", wireX: 10 - GRID_SIZE, wireY: 10 },
+        { x: 10, y: 10 - GRID_SIZE * 2, side: "top", wireX: 10, wireY: 10 - GRID_SIZE },
+        { x: 10, y: 10 + GRID_SIZE * 2, side: "bottom", wireX: 10, wireY: 10 + GRID_SIZE },
+      ],
+      outputs: [{ x: 10 + GRID_SIZE * 2, y: 10, side: "right", wireX: 10 + GRID_SIZE, wireY: 10 }],
+      defaultParams: { signs: [1, 1, 1] },
+      render: (block) => {
+        const group = block.group;
+        group.appendChild(createSvgElement("circle", { cx: 10, cy: 10, r: 10, class: "sum-circle" }));
+        group.appendChild(createSvgElement("line", { x1: 10, y1: 0, x2: 10, y2: 20, class: "sum-line" }));
+        group.appendChild(createSvgElement("line", { x1: 0, y1: 10, x2: 20, y2: 10, class: "sum-line" }));
+        const signPositions = [
+          { x: -24, y: 2 },
+          { x: 26, y: -14 },
+          { x: 26, y: 30 },
+        ];
+        signPositions.forEach((pos, idx) => {
+          const sign = (block.params.signs?.[idx] ?? 1) < 0 ? "-" : "";
+          group.appendChild(
+            createSvgElement(
+              "text",
+              {
+                x: pos.x,
+                y: pos.y,
+                class: "sum-sign",
+                "data-sign-index": String(idx),
+              },
+              sign
+            )
+          );
+        });
+      },
+    },
+    mult: {
+      width: 20,
+      height: 20,
+      inputs: [
+        { x: 10 - GRID_SIZE * 2, y: 10, side: "left", wireX: 10 - GRID_SIZE, wireY: 10 },
+        { x: 10, y: 10 - GRID_SIZE * 2, side: "top", wireX: 10, wireY: 10 - GRID_SIZE },
+        { x: 10, y: 10 + GRID_SIZE * 2, side: "bottom", wireX: 10, wireY: 10 + GRID_SIZE },
+      ],
+      outputs: [{ x: 10 + GRID_SIZE * 2, y: 10, side: "right", wireX: 10 + GRID_SIZE, wireY: 10 }],
+      defaultParams: {},
+      render: (block) => {
+        const group = block.group;
+        const r = 10;
+        const offset = r / Math.SQRT2;
+        group.appendChild(createSvgElement("circle", { cx: 10, cy: 10, r: 10, class: "sum-circle" }));
+        group.appendChild(
+          createSvgElement("line", {
+            x1: 10 - offset,
+            y1: 10 - offset,
+            x2: 10 + offset,
+            y2: 10 + offset,
+            class: "sum-line",
+          })
+        );
+        group.appendChild(
+          createSvgElement("line", {
+            x1: 10 + offset,
+            y1: 10 - offset,
+            x2: 10 - offset,
+            y2: 10 + offset,
+            class: "sum-line",
+          })
+        );
+      },
+    },
+    gain: {
+      width: 100,
+      height: 80,
+      inputs: [{ x: 0, y: 40, side: "left" }],
+      outputs: [{ x: 100, y: 40, side: "right" }],
+      defaultParams: { gain: 2 },
+      render: (block) => {
+        const group = block.group;
+        const points = "0,0 0,80 100,40";
+        group.appendChild(createSvgElement("polygon", { points, class: "gain-triangle" }));
+        const mathGroup = createSvgElement("g", {
+          class: "gain-math",
+          transform: `translate(${block.width / 3 - block.width / 2}, 0)`,
+        });
+        group.appendChild(mathGroup);
+        renderTeXMath(mathGroup, `${block.params.gain}`, block.width, block.height);
+      },
+    },
+    abs: {
+      width: 80,
+      height: 80,
+      inputs: [{ x: 0, y: 40, side: "left" }],
+      outputs: [{ x: 80, y: 40, side: "right" }],
+      defaultParams: {},
+      render: (block) => {
+        const group = block.group;
+        group.appendChild(createSvgElement("rect", { x: 0, y: 0, width: block.width, height: block.height, class: "block-body" }));
+        const mathGroup = createSvgElement("g", { class: "math-block minmax-math" });
+        group.appendChild(mathGroup);
+        renderTeXMath(mathGroup, "\\scriptsize{\\left|u\\right|}", block.width, block.height);
+      },
+    },
+    min: {
+      width: 80,
+      height: 80,
+      inputs: [
+        { x: 0, y: 20, side: "left" },
+        { x: 0, y: 60, side: "left" },
+      ],
+      outputs: [{ x: 80, y: 40, side: "right" }],
+      defaultParams: {},
+      render: (block) => {
+        const group = block.group;
+        group.appendChild(createSvgElement("rect", { x: 0, y: 0, width: block.width, height: block.height, class: "block-body" }));
+        const mathGroup = createSvgElement("g", { class: "math-block minmax-math" });
+        group.appendChild(mathGroup);
+        renderTeXMath(mathGroup, "\\scriptsize\\min", block.width, block.height);
+      },
+    },
+    max: {
+      width: 80,
+      height: 80,
+      inputs: [
+        { x: 0, y: 20, side: "left" },
+        { x: 0, y: 60, side: "left" },
+      ],
+      outputs: [{ x: 80, y: 40, side: "right" }],
+      defaultParams: {},
+      render: (block) => {
+        const group = block.group;
+        group.appendChild(createSvgElement("rect", { x: 0, y: 0, width: block.width, height: block.height, class: "block-body" }));
+        const mathGroup = createSvgElement("g", { class: "math-block" });
+        group.appendChild(mathGroup);
+        renderTeXMath(mathGroup, "\\scriptsize\\max", block.width, block.height);
+      },
+    },
+    userFunc: {
+      width: 80,
+      height: 80,
+      inputs: [{ x: 0, y: 40, side: "left" }],
+      outputs: [{ x: 80, y: 40, side: "right" }],
+      defaultParams: { expr: "u" },
+      resize: (block) => {
+        const expr = String(block.params?.expr ?? "u");
+        const length = Math.max(expr.length, 1);
+        const width = Math.max(80, 28 + length * 6);
+        const height = 80;
+        block.width = width;
+        block.height = height;
+        block.dynamicInputs = [{ x: 0, y: height / 2, side: "left" }];
+        block.dynamicOutputs = [{ x: width, y: height / 2, side: "right" }];
+      },
+      render: (block) => {
+        const group = block.group;
+        group.appendChild(createSvgElement("rect", { x: 0, y: 0, width: block.width, height: block.height, class: "block-body" }));
+        const mathGroup = createSvgElement("g", { class: "userfunc-math minmax-math" });
+        group.appendChild(mathGroup);
+        const latex = exprToLatex(block.params.expr || "u");
+        renderTeXMath(mathGroup, `\\scriptsize{${latex}}`, block.width, block.height);
+      },
+    },
+  };
+};
