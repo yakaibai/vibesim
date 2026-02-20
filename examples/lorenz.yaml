@@ -1,0 +1,253 @@
+version: 1
+name: "Lorenz Attractor"
+blocks:
+  -
+    id: b1
+    type: integrator
+    x: 2000
+    y: 1200
+    rotation: 0
+    params:
+      initial: 1
+  -
+    id: b2
+    type: integrator
+    x: 2000
+    y: 1400
+    rotation: 0
+    params:
+      initial: 1
+  -
+    id: b3
+    type: integrator
+    x: 2000
+    y: 1600
+    rotation: 0
+    params:
+      initial: 1
+  -
+    id: b4
+    type: sum
+    x: 1850
+    y: 1200
+    rotation: 0
+    params:
+      signs: [1,-1]
+  -
+    id: b5
+    type: sum
+    x: 1850
+    y: 1400
+    rotation: 0
+    params:
+      signs: [1,-1]
+  -
+    id: b6
+    type: sum
+    x: 1850
+    y: 1600
+    rotation: 0
+    params:
+      signs: [1,-1]
+  -
+    id: b7
+    type: gain
+    x: 1920
+    y: 1200
+    rotation: 0
+    params:
+      gain: 10
+  -
+    id: b8
+    type: gain
+    x: 1920
+    y: 1400
+    rotation: 0
+    params:
+      gain: 28
+  -
+    id: b9
+    type: gain
+    x: 1920
+    y: 1600
+    rotation: 0
+    params:
+      gain: 2.666666667
+  -
+    id: b10
+    type: mult
+    x: 1750
+    y: 1400
+    rotation: 0
+    params:
+      {}
+  -
+    id: b11
+    type: mult
+    x: 1750
+    y: 1600
+    rotation: 0
+    params:
+      {}
+  -
+    id: b12
+    type: scope
+    x: 2200
+    y: 1200
+    rotation: 0
+    params:
+      tMin: ""
+      tMax: ""
+      yMin: ""
+      yMax: ""
+      width: 280
+      height: 200
+  -
+    id: b13
+    type: scope
+    x: 2200
+    y: 1450
+    rotation: 0
+    params:
+      tMin: ""
+      tMax: ""
+      yMin: ""
+      yMax: ""
+      width: 280
+      height: 200
+  -
+    id: b14
+    type: scope
+    x: 2200
+    y: 1700
+    rotation: 0
+    params:
+      tMin: ""
+      tMax: ""
+      yMin: ""
+      yMax: ""
+      width: 280
+      height: 200
+connections:
+  -
+    from: b2
+    to: b4
+    fromIndex: 0
+    toIndex: 0
+    points: [[2080,1440],[2100,1440],[2100,1210],[1850,1210]]
+  -
+    from: b1
+    to: b4
+    fromIndex: 0
+    toIndex: 1
+    points: [[2080,1240],[2100,1240],[2100,1200],[1860,1200]]
+  -
+    from: b4
+    to: b7
+    fromIndex: 0
+    toIndex: 0
+    points: [[1870,1210],[1920,1240]]
+  -
+    from: b7
+    to: b1
+    fromIndex: 0
+    toIndex: 0
+    points: [[2020,1240],[2000,1240]]
+  -
+    from: b3
+    to: b6
+    fromIndex: 0
+    toIndex: 0
+    points: [[2080,1640],[2100,1640],[2100,1610],[1850,1610]]
+  -
+    from: b9
+    to: b6
+    fromIndex: 0
+    toIndex: 1
+    points: [[2020,1640],[2100,1640],[2100,1600],[1860,1600]]
+  -
+    from: b3
+    to: b9
+    fromIndex: 0
+    toIndex: 0
+    points: [[2080,1640],[2100,1640],[2100,1640],[1920,1640]]
+  -
+    from: b6
+    to: b3
+    fromIndex: 0
+    toIndex: 0
+    points: [[1870,1610],[2000,1640]]
+  -
+    from: b1
+    to: b10
+    fromIndex: 0
+    toIndex: 0
+    points: [[2080,1240],[2100,1240],[2100,1410],[1750,1410]]
+  -
+    from: b8
+    to: b10
+    fromIndex: 0
+    toIndex: 1
+    points: [[2020,1440],[2100,1440],[2100,1400],[1760,1400]]
+  -
+    from: b3
+    to: b8
+    fromIndex: 0
+    toIndex: 0
+    points: [[2080,1640],[2100,1640],[2100,1440],[1920,1440]]
+  -
+    from: b10
+    to: b5
+    fromIndex: 0
+    toIndex: 0
+    points: [[1770,1410],[1850,1410]]
+  -
+    from: b2
+    to: b5
+    fromIndex: 0
+    toIndex: 1
+    points: [[2080,1440],[2100,1440],[2100,1400],[1860,1400]]
+  -
+    from: b5
+    to: b2
+    fromIndex: 0
+    toIndex: 0
+    points: [[1870,1410],[2000,1440]]
+  -
+    from: b1
+    to: b11
+    fromIndex: 0
+    toIndex: 0
+    points: [[2080,1240],[2100,1240],[2100,1610],[1750,1610]]
+  -
+    from: b2
+    to: b11
+    fromIndex: 0
+    toIndex: 1
+    points: [[2080,1440],[2100,1440],[2100,1600],[1760,1600]]
+  -
+    from: b11
+    to: b6
+    fromIndex: 0
+    toIndex: 0
+    points: [[1770,1610],[1850,1610]]
+  -
+    from: b1
+    to: b12
+    fromIndex: 0
+    toIndex: 0
+    points: [[2080,1240],[2200,1240]]
+  -
+    from: b2
+    to: b13
+    fromIndex: 0
+    toIndex: 0
+    points: [[2080,1440],[2200,1490]]
+  -
+    from: b3
+    to: b14
+    fromIndex: 0
+    toIndex: 0
+    points: [[2080,1640],[2200,1740]]
+variables: ""
+runtime: 30

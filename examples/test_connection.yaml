@@ -1,0 +1,47 @@
+version: 1
+name: "Test Connection"
+blocks:
+  -
+    id: b1
+    type: step
+    x: 2000
+    y: 1200
+    rotation: 0
+    params:
+      stepTime: 1
+  -
+    id: b2
+    type: gain
+    x: 2150
+    y: 1200
+    rotation: 0
+    params:
+      gain: 2
+  -
+    id: b3
+    type: scope
+    x: 2300
+    y: 1200
+    rotation: 0
+    params:
+      tMin: ""
+      tMax: ""
+      yMin: ""
+      yMax: ""
+      width: 280
+      height: 200
+connections:
+  -
+    from: b1
+    to: b2
+    fromIndex: 0
+    toIndex: 0
+    points: [[2080,1240],[2150,1240]]
+  -
+    from: b2
+    to: b3
+    fromIndex: 0
+    toIndex: 0
+    points: [[2250,1240],[2300,1240]]
+variables: ""
+runtime: 10

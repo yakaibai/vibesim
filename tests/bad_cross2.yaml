@@ -1,0 +1,106 @@
+version: 1
+name: vibesim
+blocks:
+  -
+    id: b1
+    type: scope
+    x: 2060
+    y: 1370
+    rotation: 0
+    params:
+      tMin: ""
+      tMax: ""
+      yMin: ""
+      yMax: ""
+      width: 220
+      height: 160
+      showTickLabels: false
+      _visible:
+        {}
+  -
+    id: b2
+    type: scope
+    x: 2060
+    y: 1580
+    rotation: 0
+    params:
+      tMin: ""
+      tMax: ""
+      yMin: ""
+      yMax: ""
+      width: 220
+      height: 160
+      showTickLabels: false
+      _visible:
+        {}
+  -
+    id: b3
+    type: constant
+    x: 1860
+    y: 1780
+    rotation: 0
+    params:
+      value: 1
+      _visible:
+        {}
+  -
+    id: b4
+    type: constant
+    x: 1790
+    y: 1650
+    rotation: 0
+    params:
+      value: 1
+      _visible:
+        {}
+  -
+    id: b5
+    type: constant
+    x: 1790
+    y: 1410
+    rotation: 0
+    params:
+      value: 1
+      _visible:
+        {}
+connections:
+  -
+    from: b4
+    to: b1
+    fromIndex: 0
+    toIndex: 0
+    points: [[1870,1690],[2020,1690],[2020,1410],[2060,1410]]
+  -
+    from: b4
+    to: b1
+    fromIndex: 0
+    toIndex: 1
+    points: [[1870,1690],[2020,1690],[2020,1450],[2060,1450]]
+  -
+    from: b3
+    to: b2
+    fromIndex: 0
+    toIndex: 0
+    points: [[1940,1820],[1990,1820],[1990,1620],[2060,1620]]
+  -
+    from: b3
+    to: b2
+    fromIndex: 0
+    toIndex: 1
+    points: [[1940,1820],[1990,1820],[1990,1660],[2060,1660]]
+  -
+    from: b5
+    to: b1
+    fromIndex: 0
+    toIndex: 2
+    points: [[1870,1450],[1990,1450],[1990,1490],[2060,1490]]
+  -
+    from: b5
+    to: b2
+    fromIndex: 0
+    toIndex: 2
+    points: [[1870,1450],[1990,1450],[1990,1700],[2060,1700]]
+variables: ""
+sampleTime: 0.01
+runtime: 10
+autoRoute: true

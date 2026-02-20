@@ -1,0 +1,14 @@
+node_modules/
+dist/
+*.log
+.DS_Store
+Thumbs.db
+*.exe
+*.dll
+*.pak
+resources.pak
+snapshot_blob.bin
+v8_context_snapshot.bin
+icudtl.dat
+locales/
+resources/

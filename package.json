@@ -1,0 +1,34 @@
+{
+  "name": "vibesim",
+  "private": true,
+  "type": "module",
+  "version": "1.0.0",
+  "description": "A block diagram control system simulator",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "dev": "python -m http.server 8000",
+    "build": "electron-builder --win --dir",
+    "dist": "electron-builder --win --dir"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "electron": "^28.0.0",
+    "electron-builder": "^24.0.0"
+  },
+  "build": {
+    "appId": "com.vibesim.app",
+    "productName": "Vibesim",
+    "directories": {
+      "output": "dist"
+    },
+    "win": {
+      "target": [
+        "portable"
+      ]
+    },
+    "electronDownload": {
+      "mirror": "https://npmmirror.com/mirrors/electron/"
+    }
+  }
+}

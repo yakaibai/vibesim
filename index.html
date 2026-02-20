@@ -1,0 +1,438 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <script async src="https://www.googletagmanager.com/gtag/js?id=G-PMSDNW5N3Z"></script>
+  <script>
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){dataLayer.push(arguments);}
+    gtag('js', new Date());
+    gtag('config', 'G-PMSDNW5N3Z');
+  </script>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#1e1e1e">
+  <meta name="color-scheme" content="dark">
+  <title>Vibesim - Control System Simulator</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="assets/katex/katex.min.css">
+  <script src="assets/katex/katex.min.js" defer></script>
+</head>
+<body>
+  <div class="titlebar">
+    <div class="titlebar-left">
+      <div class="titlebar-title">Vibesim</div>
+    </div>
+    <div class="titlebar-center">
+      <div class="menubar">
+        <div class="menubar-item" data-menu="file">
+          <span>File</span>
+          <div class="menubar-dropdown" id="menu-file">
+            <div class="menubar-item" data-action="new">
+              <span>New</span>
+              <span class="shortcut">Ctrl+N</span>
+            </div>
+            <div class="menubar-divider"></div>
+            <div class="menubar-item" data-action="open">
+              <span>Open...</span>
+              <span class="shortcut">Ctrl+O</span>
+            </div>
+            <div class="menubar-item" data-action="save">
+              <span>Save</span>
+              <span class="shortcut">Ctrl+S</span>
+            </div>
+            <div class="menubar-item" data-action="saveAs">
+              <span>Save As...</span>
+              <span class="shortcut">Ctrl+Shift+S</span>
+            </div>
+            <div class="menubar-divider"></div>
+            <div class="menubar-item" data-action="exit">
+              <span>Exit</span>
+              <span class="shortcut">Ctrl+Q</span>
+            </div>
+          </div>
+        </div>
+        <div class="menubar-item" data-menu="edit">
+          <span>Edit</span>
+          <div class="menubar-dropdown" id="menu-edit">
+            <div class="menubar-item" data-action="undo">
+              <span>Undo</span>
+              <span class="shortcut">Ctrl+Z</span>
+            </div>
+            <div class="menubar-item" data-action="redo">
+              <span>Redo</span>
+              <span class="shortcut">Ctrl+Y</span>
+            </div>
+            <div class="menubar-divider"></div>
+            <div class="menubar-item" data-action="delete">
+              <span>Delete</span>
+              <span class="shortcut">Delete</span>
+            </div>
+          </div>
+        </div>
+        <div class="menubar-item" data-menu="view">
+          <span>View</span>
+          <div class="menubar-dropdown" id="menu-view">
+            <div class="menubar-item" data-action="resetView">
+              <span>Reset View</span>
+              <span class="shortcut">Ctrl+0</span>
+            </div>
+            <div class="menubar-item" data-action="zoomIn">
+              <span>Zoom In</span>
+              <span class="shortcut">Ctrl++</span>
+            </div>
+            <div class="menubar-item" data-action="zoomOut">
+              <span>Zoom Out</span>
+              <span class="shortcut">Ctrl+-</span>
+            </div>
+            <div class="menubar-divider"></div>
+            <div class="menubar-item" data-action="theme-dark">
+              <span>Dark Theme</span>
+            </div>
+            <div class="menubar-item" data-action="theme-light">
+              <span>Light Theme</span>
+            </div>
+            <div class="menubar-item" data-action="theme-monokai">
+              <span>Monokai Theme</span>
+            </div>
+            <div class="menubar-item" data-action="theme-dracula">
+              <span>Dracula Theme</span>
+            </div>
+          </div>
+        </div>
+        <div class="menubar-item" data-menu="help">
+          <span>Help</span>
+          <div class="menubar-dropdown" id="menu-help">
+            <div class="menubar-item" data-action="github">
+              <span>GitHub Repository</span>
+            </div>
+            <div class="menubar-item" data-action="about">
+              <span>About</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="titlebar-right">
+      <button class="titlebar-button" id="minimizeBtn" title="Minimize">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <line x1="5" y1="12" x2="19" y2="12"/>
+        </svg>
+      </button>
+      <button class="titlebar-button" id="maximizeBtn" title="Maximize">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <rect x="4" y="4" width="16" height="16" rx="2"/>
+        </svg>
+      </button>
+      <button class="titlebar-button close" id="closeBtn" title="Close">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <line x1="18" y1="6" x2="6" y2="18"/>
+          <line x1="6" y1="6" x2="18" y2="18"/>
+        </svg>
+      </button>
+    </div>
+  </div>
+  <div class="vscode-container">
+    <div class="activity-bar">
+      <button class="activity-icon active" data-panel="library" title="Library">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/>
+          <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/>
+        </svg>
+      </button>
+      <button class="activity-icon" data-panel="properties" title="Properties">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="12" cy="12" r="3"/>
+          <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+        </svg>
+      </button>
+      <button class="activity-icon" data-panel="simulation" title="Simulation">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <polygon points="5 3 19 12 5 21 5 3"/>
+        </svg>
+      </button>
+      <button class="activity-icon" data-panel="examples" title="Examples">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <rect x="2" y="7" width="20" height="14" rx="2" ry="2"/>
+          <path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/>
+        </svg>
+      </button>
+      <div class="activity-spacer"></div>
+      <button class="activity-icon" data-panel="settings" title="Settings">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="12" cy="12" r="3"/>
+          <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+        </svg>
+      </button>
+    </div>
+
+    <div class="sidebar">
+      <div class="sidebar-panel active" id="panel-library">
+        <div class="sidebar-content">
+          <div id="blockLibraryGroups" class="block-library"></div>
+        </div>
+      </div>
+
+      <div class="sidebar-panel" id="panel-properties">
+        <div class="sidebar-header">
+          <span>Properties</span>
+        </div>
+        <div class="sidebar-content">
+          <div id="inspectorBody" class="properties-content">
+            <div class="properties-placeholder">Select a block to view properties</div>
+          </div>
+          <div class="explorer-section">
+            <div class="explorer-header">
+              <span>Variables</span>
+            </div>
+            <div class="variables-editor">
+              <textarea id="variablesInput" rows="6" placeholder="k=2&#10;w=3.14"></textarea>
+              <button id="applyVariables" class="btn btn-sm">Apply</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="sidebar-panel" id="panel-simulation">
+        <div class="sidebar-header">
+          <span>Simulation</span>
+        </div>
+        <div class="sidebar-content">
+          <div class="sim-controls">
+            <div class="control-group">
+              <label>Diagram Name</label>
+              <input id="diagramName" type="text" value="vibesim" class="input">
+            </div>
+            <div class="control-group">
+              <label>Sample Time (s)</label>
+              <input id="simDt" type="number" value="0.01" step="0.001" min="0.0001" class="input">
+            </div>
+            <div class="control-group">
+              <label>Runtime (s)</label>
+              <input id="runtimeInput" type="number" value="10" step="0.5" class="input">
+            </div>
+            <div class="control-group">
+              <label class="checkbox-label">
+                <input id="autoRouteInput" type="checkbox" checked>
+                <span>Auto-route wires</span>
+              </label>
+            </div>
+            <div class="sim-buttons">
+              <button id="runBtn" class="btn btn-primary btn-lg" data-action="run">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <polygon points="5 3 19 12 5 21 5 3"/>
+                </svg>
+                Run
+              </button>
+              <button id="resetSimBtn" class="btn btn-secondary">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 12"/>
+                  <path d="M3 3v9h9"/>
+                </svg>
+                Reset
+              </button>
+            </div>
+            <div class="sim-buttons">
+              <button id="clearBtn" class="btn btn-danger">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <polyline points="3 6 5 6 21 6"/>
+                  <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+                </svg>
+                Clear
+              </button>
+            </div>
+          </div>
+          <div class="sim-status">
+            <div class="status-indicator" id="statusIndicator"></div>
+            <span id="status">Idle</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="sidebar-panel" id="panel-examples">
+        <div class="sidebar-header">
+          <span>Examples</span>
+        </div>
+        <div class="sidebar-content">
+          <div id="examplesList" class="examples-list"></div>
+        </div>
+      </div>
+
+      <div class="sidebar-panel" id="panel-settings">
+        <div class="sidebar-header">
+          <span>Settings</span>
+        </div>
+        <div class="sidebar-content">
+          <div class="settings-section">
+            <h4>Code Generation</h4>
+            <div class="control-group">
+              <label>Language</label>
+              <select id="codegenLang" class="input">
+                <option value="c">C</option>
+                <option value="python">Python</option>
+                <option value="tikz">TikZ</option>
+              </select>
+            </div>
+            <div class="control-group">
+              <label class="checkbox-label">
+                <input id="codegenIncludeMain" type="checkbox" checked>
+                <span>Include main()</span>
+              </label>
+            </div>
+            <button id="codegenBtn" class="btn btn-secondary">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <polyline points="16 18 22 12 16 6"/>
+                <polyline points="8 6 2 12 8 18"/>
+              </svg>
+              Generate Code
+            </button>
+          </div>
+          <div class="settings-section">
+            <h4>Stability Analysis</h4>
+            <div class="control-group">
+              <label>Loop</label>
+              <select id="marginLoopSelect" class="input"></select>
+            </div>
+            <pre id="marginOutputText" class="margin-output">No loops detected.</pre>
+          </div>
+          <div class="settings-section">
+            <h4>Debug</h4>
+            <button id="copyDebug" class="btn btn-secondary">Copy Debug Info</button>
+            <pre id="debugLog" class="debug-log">Routing debug output will appear here.</pre>
+          </div>
+          <div class="settings-section">
+            <h4>About</h4>
+            <div class="about-content">
+              <div class="about-logo">
+                <svg viewBox="0 0 48 32">
+                  <rect x="1.5" y="1.5" width="14" height="10" rx="1.5" />
+                  <rect x="32.5" y="20.5" width="14" height="10" rx="1.5" />
+                  <rect x="1.5" y="20.5" width="14" height="10" rx="1.5" />
+                  <path d="M15.5 6.5h8.5v19h8.5" />
+                  <path d="M15.5 25.5h17" />
+                </svg>
+              </div>
+              <p><strong>Vibesim</strong> - A browser-based block diagram simulator for control systems.</p>
+              <p>Build diagrams by dragging blocks onto canvas, wire them together, and simulate behavior directly in browser.</p>
+              <p>Please submit bugs and feature requests <a href="https://github.com/kennyjensen/vibesim/issues" target="_blank" rel="noopener">here</a>.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="main-editor">
+      <div class="editor-toolbar">
+        <div class="toolbar-group">
+          <button id="runBtn" class="toolbar-btn" data-action="run" title="Run Simulation">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polygon points="5 3 19 12 5 21 5 3"/>
+            </svg>
+          </button>
+          <button id="resetSimBtn" class="toolbar-btn" title="Reset Simulation">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 12"/>
+              <path d="M3 3v9h9"/>
+            </svg>
+          </button>
+        </div>
+        <div class="toolbar-group">
+          <button id="homeBtn" class="toolbar-btn" title="Reset View">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M4 11l8-6 8 6M6 10v9h12v-9" />
+            </svg>
+          </button>
+          <button id="zoomInBtn" class="toolbar-btn" title="Zoom In">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="11" cy="11" r="7" />
+              <path d="M11 8v6M8 11h6M16.5 16.5L21 21" />
+            </svg>
+          </button>
+          <button id="zoomOutBtn" class="toolbar-btn" title="Zoom Out">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="11" cy="11" r="7" />
+              <path d="M8 11h6M16.5 16.5L21 21" />
+            </svg>
+          </button>
+        </div>
+        <div class="toolbar-spacer"></div>
+        <div class="toolbar-group">
+          <button id="loadSubsystemBtn" class="toolbar-btn" title="Load Subsystem">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+              <polyline points="7 10 12 15 17 10"/>
+              <line x1="12" y1="15" x2="12" y2="3"/>
+            </svg>
+          </button>
+        </div>
+      </div>
+
+      <div class="editor-content">
+        <div id="canvas" class="canvas-container">
+          <div class="subsystem-nav">
+            <button id="subsystemUpBtn" class="floating-btn" aria-label="Parent diagram" title="Parent diagram" hidden>
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M12 19V5M6 11l6-6 6 6" />
+              </svg>
+            </button>
+          </div>
+          <svg id="svgCanvas">
+            <g id="wireLayer"></g>
+            <g id="blockLayer"></g>
+            <g id="overlayLayer"></g>
+          </svg>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="status-bar">
+    <div class="status-item">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <circle cx="12" cy="12" r="10"/>
+        <line x1="12" y1="16" x2="12" y2="12"/>
+        <line x1="12" y1="8" x2="12.01" y2="8"/>
+      </svg>
+      <span id="statusBarInfo">Ready</span>
+    </div>
+    <div class="status-item">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <circle cx="12" cy="12" r="10"/>
+        <polyline points="12 6 12 12 16 14"/>
+      </svg>
+      <span id="statusBarTime">0.00s</span>
+    </div>
+    <div class="status-item">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <circle cx="11" cy="11" r="8"/>
+        <line x1="21" y1="21" x2="16.65" y2="16.65"/>
+      </svg>
+      <span id="statusBarZoom">100%</span>
+    </div>
+    <div class="status-spacer"></div>
+    <div class="status-item">
+      <span id="statusBarBlocks">0 blocks</span>
+    </div>
+    <div class="status-item">
+      <span id="statusBarConnections">0 connections</span>
+    </div>
+    <div class="status-item">
+      <a href="https://github.com/kennyjensen/vibesim" target="_blank" rel="noopener" class="github-link">
+        <svg viewBox="0 0 24 24" fill="currentColor">
+          <path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-3.5 8.13c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22"/>
+        </svg>
+        GitHub
+      </a>
+    </div>
+  </div>
+
+  <input id="fileOpenInput" type="file" accept=".yaml,.yml,.txt,text/yaml,text/plain,application/x-yaml,application/yaml,*/*" hidden>
+  <input id="loadSubsystemInput" type="file" accept=".yaml,.yml,.txt,text/yaml,text/plain,application/x-yaml,application/yaml,*/*" hidden>
+  <input id="loadInput" type="file" accept=".yaml,.yml,.txt,text/yaml,text/plain,application/x-yaml,application/yaml,*/*" hidden>
+
+  <script async defer src="https://buttons.github.io/buttons.js"></script>
+  <script type="module" src="app.js"></script>
+</body>
+</html>
