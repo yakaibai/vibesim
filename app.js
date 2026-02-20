@@ -39,17 +39,18 @@ const runtimeInput = document.getElementById("runtimeInput");
 const autoRouteInput = document.getElementById("autoRouteInput");
 const inspectorBody = document.getElementById("inspectorBody");
 const deleteSelectionBtn = document.getElementById("deleteSelection");
-const examplesList = document.getElementById("examplesList");
 const rotateSelectionBtn = document.getElementById("rotateSelection");
 const errorBox = document.getElementById("errorBox");
 const debugPanel = document.getElementById("debugPanel");
 const debugLog = document.getElementById("debugLog");
-const blockLibraryGroups = document.getElementById("blockLibraryGroups");
 const statusBarInfo = document.getElementById("statusBarInfo");
 const statusBarTime = document.getElementById("statusBarTime");
 const statusBarZoom = document.getElementById("statusBarZoom");
 const statusBarBlocks = document.getElementById("statusBarBlocks");
 const statusBarConnections = document.getElementById("statusBarConnections");
+
+let blockLibraryGroups = null;
+let examplesList = null;
 
 const updateStatusBar = (info, time, zoom) => {
   if (statusBarInfo && info) statusBarInfo.textContent = info;
@@ -88,9 +89,11 @@ const applyTheme = (themeId) => {
 
 
 const renderBlockLibrary = () => {
+  console.log('renderBlockLibrary() - blockLibraryGroups:', blockLibraryGroups);
   if (!blockLibraryGroups) return;
   blockLibraryGroups.innerHTML = "";
   const groups = [...blockLibrary];
+  console.log('renderBlockLibrary() - groups:', groups);
   if (state.loadedSubsystems.size) {
     const subsystemBlocks = Array.from(state.loadedSubsystems.entries()).map(([key, spec]) => ({
       type: "subsystem",
@@ -1169,6 +1172,20 @@ function parseYAML(text) {
 }
 
 function init() {
+  // 获取DOM元素
+  blockLibraryGroups = document.getElementById("blockLibraryGroups");
+  examplesList = document.getElementById("examplesList");
+  
+  console.log('init() - blockLibraryGroups:', blockLibraryGroups);
+  console.log('init() - examplesList:', examplesList);
+  console.log('init() - blockLibrary:', blockLibrary);
+  console.log('init() - blockLibrary type:', typeof blockLibrary);
+  console.log('init() - blockLibrary length:', blockLibrary ? blockLibrary.length : 'undefined');
+  
+  if (blockLibraryGroups) {
+    console.log('init() - blockLibraryGroups.innerHTML before:', blockLibraryGroups.innerHTML);
+  }
+  
   updateSubsystemNavUi();
   updateStatusBar("Ready", 0, 1);
   
@@ -1337,6 +1354,8 @@ function init() {
     "examples/antiwindup.yaml",
     "examples/complementary.yaml",
   ];
+  console.log('init() - examplesList:', examplesList);
+  console.log('init() - exampleFiles:', exampleFiles);
   if (examplesList) {
     examplesList.innerHTML = "";
     exampleFiles.forEach((path) => {
@@ -1577,7 +1596,6 @@ function init() {
       statusEl.textContent = `Export failed: ${error?.message || error}`;
     }
   };
-
 
   initViewBox();
 
@@ -1989,7 +2007,8 @@ function init() {
         e.stopPropagation();
       });
     }
-  }
+}
+
 
   const handleDeleteSelection = () => {
     if (state.selectedId) {
@@ -2007,7 +2026,10 @@ function init() {
     }
   };
 
-  deleteSelectionBtn.addEventListener("click", handleDeleteSelection);
+  if (deleteSelectionBtn) {
+    deleteSelectionBtn.addEventListener("click", handleDeleteSelection);
+  }
+  
   const moveSelectedBlocks = (dx, dy) => {
     const selectedIds = state.selectedIds && state.selectedIds.size > 0 ? state.selectedIds : null;
     const ids = selectedIds && selectedIds.has(state.selectedId)
@@ -2058,7 +2080,8 @@ function init() {
     }
   });
 
-  rotateSelectionBtn.addEventListener("click", () => {
+  if (rotateSelectionBtn) {
+    rotateSelectionBtn.addEventListener("click", () => {
     if (!state.selectedId) return;
     const block = state.blocks.get(state.selectedId);
     if (!block) return;
@@ -2074,6 +2097,11 @@ function init() {
   const zoomInBtn = document.getElementById("zoomInBtn");
   const zoomOutBtn = document.getElementById("zoomOutBtn");
   const printBtn = document.getElementById("printBtn");
+  if (printBtn) {
+    printBtn.addEventListener("click", () => {
+      window.print();
+    });
+  }
 
   if (homeBtn) homeBtn.addEventListener("click", fitToDiagram);
   if (zoomInBtn) {
@@ -2385,10 +2413,13 @@ function init() {
 
   };
   initMobileCarousel();
-
-  init();
+}
 
 function initVSCodeUI() {
+  init(); // try to initialize the app first
+
+  console.log('initVSCodeUI() 开始执行');
+  
   const savedTheme = localStorage.getItem('theme');
   if (savedTheme) {
     document.documentElement.setAttribute('data-theme', savedTheme);
@@ -2397,9 +2428,13 @@ function initVSCodeUI() {
   const activityIcons = document.querySelectorAll('.activity-icon');
   const sidebarPanels = document.querySelectorAll('.sidebar-panel');
   
+  console.log('initVSCodeUI() - activityIcons:', activityIcons.length);
+  console.log('initVSCodeUI() - sidebarPanels:', sidebarPanels.length);
+  
   activityIcons.forEach(icon => {
     icon.addEventListener('click', () => {
       const panelId = icon.dataset.panel;
+      console.log('面板点击 - panelId:', panelId);
       
       if (!panelId) return;
       
@@ -2407,13 +2442,17 @@ function initVSCodeUI() {
       icon.classList.add('active');
       
       sidebarPanels.forEach(panel => {
+        console.log('检查面板 - panel.id:', panel.id, '目标:', `panel-${panelId}`);
         panel.classList.remove('active');
         if (panel.id === `panel-${panelId}`) {
           panel.classList.add('active');
+          console.log('激活面板:', panel.id);
         }
       });
     });
   });
+  
+  console.log('initVSCodeUI() - 面板切换已设置');
   
   const sidebarSectionTitles = document.querySelectorAll('.sidebar-section-title');
   sidebarSectionTitles.forEach(title => {
@@ -2434,139 +2473,27 @@ function initVSCodeUI() {
     });
   });
   
-  const menubarItems = document.querySelectorAll('.menubar-item');
+  const menubarItems = document.querySelectorAll('.menubar > .menubar-item');
   const menubarDropdowns = document.querySelectorAll('.menubar-dropdown');
   
   menubarItems.forEach(item => {
     item.addEventListener('click', (e) => {
-      const action = item.dataset.action;
+      const menu = item.dataset.menu;
       
       e.stopPropagation();
       
-      if (!action) {
+      if (menu) {
         const dropdown = item.querySelector('.menubar-dropdown');
         if (dropdown) {
           const isVisible = dropdown.style.display === 'block';
           menubarDropdowns.forEach(d => d.style.display = 'none');
           dropdown.style.display = isVisible ? 'none' : 'block';
         }
-        return;
       }
-      
-      switch (action) {
-        case 'new':
-          newDiagram();
-          break;
-        case 'open':
-          if (window.electron) {
-            window.electron.openFile().then(result => {
-              if (result.success === true) {
-                try {
-                  const data = parseYAML(result.content);
-                  loadDiagram(data);
-                  currentFilePath = result.fileName;
-                  statusEl.textContent = `Loaded: ${result.fileName}`;
-                } catch (error) {
-                  statusEl.textContent = `Load error: ${error?.message || error}`;
-                }
-              }
-            }).catch(error => {
-              statusEl.textContent = `Open error: ${error?.message || error}`;
-            });
-          } else {
-            fileOpenInput.click();
-          }
-          break;
-        case 'save':
-          const yaml = toYAML(serializeDiagram(state));
-          if (window.electron) {
-            if (currentFilePath) {
-              window.electron.saveFile(yaml, currentFilePath);
-            } else {
-              window.electron.saveFileAs(yaml, `${sanitizeFilename(state.diagramName)}.yaml`);
-            }
-          } else {
-            const blob = new Blob([yaml], { type: "text/yaml" });
-            const url = URL.createObjectURL(blob);
-            const link = document.createElement("a");
-            link.href = url;
-            link.download = currentFilePath || `${sanitizeFilename(state.diagramName)}.yaml`;
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
-            URL.revokeObjectURL(url);
-          }
-          break;
-        case 'saveAs':
-          if (window.electron) {
-            const yaml = toYAML(serializeDiagram(state));
-            window.electron.saveFileAs(yaml, `${sanitizeFilename(state.diagramName)}.yaml`);
-          } else {
-            const yaml = toYAML(serializeDiagram(state));
-            const blob = new Blob([yaml], { type: "text/yaml" });
-            const url = URL.createObjectURL(blob);
-            const link = document.createElement("a");
-            link.href = url;
-            link.download = `${sanitizeFilename(state.diagramName)}.yaml`;
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
-            URL.revokeObjectURL(url);
-          }
-          break;
-        case 'exit':
-          if (window.electron) {
-            window.electron.closeWindow();
-          }
-          break;
-        case 'undo':
-          if (deleteSelectionBtn) {
-            break;
-          }
-          break;
-        case 'redo':
-          break;
-        case 'delete':
-          if (deleteSelectionBtn) deleteSelectionBtn.click();
-          break;
-        case 'resetView':
-          if (homeBtn) homeBtn.click();
-          break;
-        case 'zoomIn':
-          if (zoomInBtn) zoomInBtn.click();
-          break;
-        case 'zoomOut':
-          if (zoomOutBtn) zoomOutBtn.click();
-          break;
-        case 'theme-dark':
-          document.documentElement.setAttribute('data-theme', 'dark');
-          localStorage.setItem('theme', 'dark');
-          break;
-        case 'theme-light':
-          document.documentElement.setAttribute('data-theme', 'light');
-          localStorage.setItem('theme', 'light');
-          break;
-        case 'theme-monokai':
-          document.documentElement.setAttribute('data-theme', 'monokai');
-          localStorage.setItem('theme', 'monokai');
-          break;
-        case 'theme-dracula':
-          document.documentElement.setAttribute('data-theme', 'dracula');
-          localStorage.setItem('theme', 'dracula');
-          break;
-        case 'github':
-          window.open('https://github.com/kennyjensen/vibesim', '_blank');
-          break;
-        case 'about':
-          alert('Vibesim - Control System Simulator\n\nA web-based control system simulator with a visual block diagram editor.\n\nVersion: 1.0.0');
-          break;
-      }
-      
-      menubarDropdowns.forEach(dropdown => dropdown.style.display = 'none');
     });
   });
   
-  document.addEventListener('click', () => {
+  document.addEventListener('click', (e) => {
     menubarDropdowns.forEach(dropdown => dropdown.style.display = 'none');
   });
   
@@ -2576,11 +2503,134 @@ function initVSCodeUI() {
     });
   });
   
+  const menubarDropdownItems = document.querySelectorAll('.menubar-dropdown .menubar-item');
+  menubarDropdownItems.forEach(item => {
+    item.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const action = item.dataset.action;
+      if (action) {
+        menubarDropdowns.forEach(dropdown => dropdown.style.display = 'none');
+        handleMenuAction(action);
+      }
+    });
+  });
+  
+  function handleMenuAction(action) {
+    switch (action) {
+      case 'new':
+        newDiagram();
+        break;
+      case 'open':
+        if (window.electron) {
+          window.electron.openFile().then(result => {
+            if (result.success === true) {
+              try {
+                const data = parseYAML(result.content);
+                loadDiagram(data);
+                currentFilePath = result.fileName;
+                statusEl.textContent = `Loaded: ${result.fileName}`;
+              } catch (error) {
+                statusEl.textContent = `Load error: ${error?.message || error}`;
+              }
+            }
+          }).catch(error => {
+            statusEl.textContent = `Open error: ${error?.message || error}`;
+          });
+        } else {
+          fileOpenInput.click();
+        }
+        break;
+      case 'save':
+        const yaml = toYAML(serializeDiagram(state));
+        if (window.electron) {
+          if (currentFilePath) {
+            window.electron.saveFile(yaml, currentFilePath);
+          } else {
+            window.electron.saveFileAs(yaml, `${sanitizeFilename(state.diagramName)}.yaml`);
+          }
+        } else {
+          const blob = new Blob([yaml], { type: "text/yaml" });
+          const url = URL.createObjectURL(blob);
+          const link = document.createElement("a");
+          link.href = url;
+          link.download = currentFilePath || `${sanitizeFilename(state.diagramName)}.yaml`;
+          document.body.appendChild(link);
+          link.click();
+          document.body.removeChild(link);
+          URL.revokeObjectURL(url);
+        }
+        break;
+      case 'saveAs':
+        if (window.electron) {
+          const yaml = toYAML(serializeDiagram(state));
+          window.electron.saveFileAs(yaml, `${sanitizeFilename(state.diagramName)}.yaml`);
+        } else {
+          const yaml = toYAML(serializeDiagram(state));
+          const blob = new Blob([yaml], { type: "text/yaml" });
+          const url = URL.createObjectURL(blob);
+          const link = document.createElement("a");
+          link.href = url;
+          link.download = `${sanitizeFilename(state.diagramName)}.yaml`;
+          document.body.appendChild(link);
+          link.click();
+          document.body.removeChild(link);
+          URL.revokeObjectURL(url);
+        }
+        break;
+      case 'exit':
+        if (window.electron) {
+          window.electron.closeWindow();
+        }
+        break;
+      case 'undo':
+        if (deleteSelectionBtn) {
+          break;
+        }
+        break;
+      case 'redo':
+        break;
+      case 'delete':
+        if (deleteSelectionBtn) deleteSelectionBtn.click();
+        break;
+      case 'resetView':
+        if (homeBtn) homeBtn.click();
+        break;
+      case 'zoomIn':
+        if (zoomInBtn) zoomInBtn.click();
+        break;
+      case 'zoomOut':
+        if (zoomOutBtn) zoomOutBtn.click();
+        break;
+      case 'theme-dark':
+        document.documentElement.setAttribute('data-theme', 'dark');
+        localStorage.setItem('theme', 'dark');
+        break;
+      case 'theme-light':
+        document.documentElement.setAttribute('data-theme', 'light');
+        localStorage.setItem('theme', 'light');
+        break;
+      case 'theme-monokai':
+        document.documentElement.setAttribute('data-theme', 'monokai');
+        localStorage.setItem('theme', 'monokai');
+        break;
+      case 'theme-dracula':
+        document.documentElement.setAttribute('data-theme', 'dracula');
+        localStorage.setItem('theme', 'dracula');
+        break;
+      case 'github':
+        window.open('https://github.com/kennyjensen/vibesim', '_blank');
+        break;
+      case 'about':
+        alert('Vibesim - Control System Simulator\n\nA web-based control system simulator with a visual block diagram editor.\n\nVersion: 1.0.0');
+        break;
+    }
+  }
+  
+  const minimizeBtn = document.getElementById('minimizeBtn');
+  const maximizeBtn = document.getElementById('maximizeBtn');
+  const closeBtn = document.getElementById('closeBtn');
+  
   if (window.electron) {
-    const minimizeBtn = document.getElementById('minimizeBtn');
-    const maximizeBtn = document.getElementById('maximizeBtn');
-    const closeBtn = document.getElementById('closeBtn');
-    
     console.log('Window control buttons:', { minimizeBtn, maximizeBtn, closeBtn });
     console.log('Electron API:', window.electron);
     
@@ -2611,8 +2661,51 @@ function initVSCodeUI() {
       });
     }
   } else {
-    console.log('Electron API not available');
+    console.log('Electron API not available, using browser fallback');
+    
+    if (minimizeBtn) {
+      minimizeBtn.addEventListener('click', (e) => {
+        console.log('Minimize button clicked (browser)');
+        e.preventDefault();
+        e.stopPropagation();
+        document.body.style.display = 'none';
+        const restoreBtn = document.createElement('button');
+        restoreBtn.textContent = 'Restore';
+        restoreBtn.style.cssText = 'position:fixed;top:10px;left:10px;z-index:9999;padding:10px 20px;background:#007acc;color:white;border:none;border-radius:4px;cursor:pointer;';
+        restoreBtn.onclick = () => {
+          document.body.style.display = 'flex';
+          restoreBtn.remove();
+        };
+        document.body.appendChild(restoreBtn);
+      });
+    }
+    
+    if (maximizeBtn) {
+      maximizeBtn.addEventListener('click', (e) => {
+        console.log('Maximize button clicked (browser)');
+        e.preventDefault();
+        e.stopPropagation();
+        if (!document.fullscreenElement) {
+          document.documentElement.requestFullscreen().catch(err => {
+            console.log('Fullscreen error:', err);
+          });
+        } else {
+          document.exitFullscreen();
+        }
+      });
+    }
+    
+    if (closeBtn) {
+      closeBtn.addEventListener('click', (e) => {
+        console.log('Close button clicked (browser)');
+        e.preventDefault();
+        e.stopPropagation();
+        if (confirm('Are you sure you want to close Vibesim?')) {
+          window.close();
+        }
+      });
+    }
   }
 }
-
+// 初始化VSCode UI
 document.addEventListener('DOMContentLoaded', initVSCodeUI);
