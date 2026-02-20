@@ -48,6 +48,12 @@
   --vscode-text-link-foreground: #3794ff;
   --vscode-text-link-activeForeground: #3794ff;
   --vscode-text-blockquote-background: #7f7f7f1f;
+  --wire: #007acc;
+  --titlebar-background: #3c3c3c;
+  --titlebar-foreground: #cccccc;
+  --titlebar-border: #3c3c3c;
+  --canvas-background: #1e1e1e;
+  --canvas-grid-color: rgba(255, 255, 255, 0.03);
 }
 
 [data-theme="light"] {
@@ -58,8 +64,8 @@
   --vscode-editor-background: #ffffff;
   --vscode-statusbar-background: #007acc;
   --vscode-statusbar-foreground: #ffffff;
-  --vscode-activitybar-background: #2c2c2c;
-  --vscode-activitybar-foreground: #ffffff;
+  --vscode-activitybar-background: #f3f3f3;
+  --vscode-activitybar-foreground: #333333;
   --vscode-activitybar-active-background: #ffffff;
   --vscode-activitybar-active-border: #007acc;
   --vscode-button-background: #007acc;
@@ -263,6 +269,19 @@
   flex-shrink: 0;
 }
 
+.titlebar-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--titlebar-foreground);
+  user-select: none;
+  -webkit-app-region: drag;
+}
+
+.titlebar-icon svg {
+  display: block;
+}
+
 .titlebar-center {
   display: flex;
   align-items: center;
@@ -333,7 +352,7 @@
   display: flex;
   align-items: center;
   cursor: pointer;
-  color: #cccccc;
+  color: var(--titlebar-foreground);
   font-size: 13px;
   user-select: none;
   -webkit-app-region: no-drag;
@@ -345,8 +364,8 @@
 }
 
 .titlebar-center > .menubar > .menubar-item:hover {
-  background-color: #505050;
-  color: #ffffff;
+  background-color: var(--vscode-list-hover-background);
+  color: var(--vscode-foreground);
 }
 
 .menubar-item > span {
@@ -358,9 +377,9 @@
   top: 100%;
   left: 0;
   min-width: 200px;
-  background-color: #252526;
-  border: 1px solid #454545;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+  background-color: var(--vscode-widget-background);
+  border: 1px solid var(--vscode-widget-border);
+  box-shadow: var(--vscode-widget-shadow);
   display: none;
   z-index: 1001;
   padding: 4px 0;
@@ -376,7 +395,7 @@
 }
 
 .menubar-dropdown .menubar-item:hover {
-  background-color: #094771;
+  background-color: var(--vscode-list-active-background);
 }
 
 .menubar-dropdown .menubar-item > span:first-child {
@@ -486,6 +505,36 @@ body {
   display: flex;
   flex-direction: column;
   flex-shrink: 0;
+  position: relative;
+  transition: width 0.15s ease;
+}
+
+.sidebar.collapsed {
+  width: 0;
+  min-width: 0;
+  flex: 0;
+  overflow: hidden;
+  border: none;
+  opacity: 0;
+}
+
+.sidebar-resize-handle {
+  position: absolute;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  width: 4px;
+  cursor: col-resize;
+  z-index: 100;
+  transition: background-color 0.15s ease;
+}
+
+.sidebar-resize-handle:hover {
+  background-color: var(--vscode-list-hover-background);
+}
+
+.sidebar.collapsed .sidebar-resize-handle {
+  display: none;
 }
 
 .sidebar-panel {
@@ -864,6 +913,15 @@ body {
   width: 100%;
   height: 100%;
   display: block;
+  cursor: grab;
+}
+
+#svgCanvas.panning {
+  cursor: grabbing;
+}
+
+#svgCanvas.zooming {
+  cursor: zoom-in;
 }
 
 .svg-block .block-body {
@@ -924,6 +982,260 @@ body {
 
 .block-text.label-large {
   font-size: 28px;
+}
+
+.modal {
+  display: none;
+  position: fixed;
+  z-index: 1000;
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: 100%;
+  background-color: rgba(0, 0, 0, 0.5);
+  align-items: center;
+  justify-content: center;
+}
+
+.modal.show {
+  display: flex;
+}
+
+.modal-content {
+  background-color: var(--vscode-sidebar-background);
+  border: 1px solid var(--vscode-border);
+  border-radius: 6px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+  max-width: 500px;
+  width: 90%;
+  max-height: 80vh;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--vscode-border);
+  background-color: var(--vscode-activitybar-background);
+}
+
+.modal-header h2 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--vscode-foreground);
+}
+
+.modal-close {
+  background: none;
+  border: none;
+  color: var(--vscode-foreground);
+  font-size: 24px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0;
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  transition: background-color 0.15s ease;
+}
+
+.modal-close:hover {
+  background-color: var(--vscode-list-hover-background);
+}
+
+.modal-body {
+  padding: 20px;
+  overflow-y: auto;
+  flex: 1;
+}
+
+.about-section {
+  margin-bottom: 20px;
+}
+
+.about-section:last-child {
+  margin-bottom: 0;
+}
+
+.about-logo-section {
+  text-align: center;
+  padding: 20px 0;
+}
+
+.about-logo {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  margin-bottom: 16px;
+}
+
+.about-logo svg {
+  color: var(--vscode-foreground);
+}
+
+.about-section h3 {
+  margin: 0 0 12px 0;
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--vscode-foreground);
+}
+
+.about-section p {
+  margin: 0 0 8px 0;
+  color: var(--vscode-foreground);
+  line-height: 1.6;
+}
+
+.about-section ul {
+  margin: 8px 0 0 20px;
+  padding: 0;
+  color: var(--vscode-foreground);
+}
+
+.about-section li {
+  margin: 4px 0;
+  line-height: 1.6;
+}
+
+.about-modal {
+  max-width: 550px;
+  background: linear-gradient(135deg, var(--vscode-sidebar-background) 0%, var(--vscode-editor-background) 100%);
+}
+
+.about-header {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 30px 20px;
+  background: linear-gradient(135deg, #007acc 0%, #005a9e 100%);
+  position: relative;
+}
+
+.about-logo-large {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  margin-bottom: 20px;
+}
+
+.about-logo-large svg {
+  filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.3));
+}
+
+.about-header .modal-close {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  color: #ffffff;
+  background-color: rgba(255, 255, 255, 0.2);
+  transition: all 0.2s ease;
+}
+
+.about-header .modal-close:hover {
+  background-color: rgba(255, 255, 255, 0.3);
+  transform: rotate(90deg);
+}
+
+.about-title {
+  text-align: center;
+  margin-bottom: 20px;
+}
+
+.about-title h2 {
+  margin: 0 0 8px 0;
+  font-size: 28px;
+  font-weight: 700;
+  background: linear-gradient(135deg, #007acc 0%, #00d4ff 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.about-subtitle {
+  margin: 0;
+  font-size: 14px;
+  color: var(--vscode-descriptionForeground);
+  font-weight: 400;
+  letter-spacing: 0.5px;
+}
+
+.about-modal .about-section {
+  padding: 15px 0;
+  border-bottom: 1px solid var(--vscode-border);
+}
+
+.about-modal .about-section:last-child {
+  border-bottom: none;
+}
+
+.about-modal .about-section p {
+  color: var(--vscode-foreground);
+  line-height: 1.7;
+}
+
+.about-modal .about-section ul {
+  color: var(--vscode-foreground);
+}
+
+.about-modal .about-section li {
+  padding: 4px 0;
+  position: relative;
+  padding-left: 20px;
+}
+
+.about-modal .about-section li::before {
+  content: "•";
+  position: absolute;
+  left: 0;
+  color: #007acc;
+  font-weight: bold;
+}
+
+.modal-footer {
+  padding: 16px 20px;
+  border-top: 1px solid var(--vscode-border);
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  background-color: var(--vscode-activitybar-background);
+}
+
+.btn {
+  padding: 6px 14px;
+  border: none;
+  border-radius: 2px;
+  font-size: 13px;
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+  font-family: inherit;
+}
+
+.btn-primary {
+  background-color: var(--vscode-button-background);
+  color: var(--vscode-button-foreground);
+}
+
+.btn-primary:hover {
+  background-color: var(--vscode-button-hover-background);
+}
+
+.btn-secondary {
+  background-color: var(--vscode-input-background);
+  color: var(--vscode-foreground);
+  border: 1px solid var(--vscode-input-border);
+}
+
+.btn-secondary:hover {
+  background-color: var(--vscode-list-hover-background);
 }
 
 .math-foreign {
@@ -1312,6 +1624,35 @@ body {
   stroke-width: 1.5;
   stroke-linecap: round;
   stroke-linejoin: round;
+}
+
+.status-btn {
+  background: transparent;
+  border: none;
+  color: var(--vscode-statusbar-foreground);
+  cursor: pointer;
+  padding: 2px 4px;
+  margin: 0 2px;
+  border-radius: 2px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background-color 0.15s ease;
+}
+
+.status-btn:hover {
+  background-color: rgba(255, 255, 255, 0.12);
+}
+
+.status-btn svg {
+  width: 14px;
+  height: 14px;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  margin: 0;
 }
 
 .status-spacer {
@@ -1761,6 +2102,38 @@ select option {
   width: 16px;
   height: 16px;
   cursor: pointer;
+}
+
+.control-group-inline {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.control-group-inline label {
+  display: flex;
+  align-items: center;
+  min-width: 100px;
+  font-size: 12px;
+  color: var(--vscode-foreground);
+  white-space: nowrap;
+}
+
+.control-group-inline .input {
+  flex: 1;
+  padding: 6px 8px;
+  background-color: var(--vscode-input-background);
+  border: 1px solid var(--vscode-input-border);
+  border-radius: 3px;
+  color: var(--vscode-foreground);
+  font-size: 13px;
+  outline: none;
+  transition: border-color 0.15s ease;
+}
+
+.control-group-inline .input:focus {
+  border-color: var(--vscode-list-focus-outline);
 }
 
 .btn {

@@ -82,7 +82,7 @@ export async function simulate({ state, runtimeInput, statusEl, downloadFile, se
     const fileSinks = blocks.filter((b) => b.type === "fileSink");
 
     if (scopes.length === 0 && xyScopes.length === 0 && fileSinks.length === 0) {
-      statusEl.textContent = "Add a Scope block";
+      if (statusEl) statusEl.textContent = "Add a Scope block";
       return { status: "error", reason: "no_scope", session: null };
     }
 
@@ -176,13 +176,13 @@ export async function simulate({ state, runtimeInput, statusEl, downloadFile, se
     };
   }
 
-  statusEl.textContent = "Running...";
+  if (statusEl) statusEl.textContent = "Running...";
   if (onStatusUpdate) onStatusUpdate("Running...", 0);
   const canProgressiveRun =
     typeof window !== "undefined" &&
     typeof window.requestAnimationFrame === "function" &&
     typeof Element !== "undefined" &&
-    statusEl instanceof Element;
+    (!statusEl || statusEl instanceof Element);
   const chunkSize = 250;
 
   const runStep = (i) => {
@@ -252,12 +252,12 @@ export async function simulate({ state, runtimeInput, statusEl, downloadFile, se
 
       if (run.algebraicLoopFailed) break;
       if (control?.pauseRequested === true) {
-        statusEl.textContent = "Paused";
+        if (statusEl) statusEl.textContent = "Paused";
         if (onStatusUpdate) onStatusUpdate("Paused", run.time[run.time.length - 1]);
         return { status: "paused", session: run };
       }
       const doneRatio = run.samples <= 0 ? 1 : Math.min(1, i / (run.samples + 1));
-      statusEl.textContent = `Running... ${Math.round(doneRatio * 100)}%`;
+      if (statusEl) statusEl.textContent = `Running... ${Math.round(doneRatio * 100)}%`;
       if (onStatusUpdate) onStatusUpdate(`Running... ${Math.round(doneRatio * 100)}%`, run.time[run.time.length - 1]);
       await new Promise((resolve) => window.requestAnimationFrame(() => resolve()));
     }
@@ -266,7 +266,7 @@ export async function simulate({ state, runtimeInput, statusEl, downloadFile, se
       if (!runStep(i)) break;
       run.nextStep = i + 1;
       if (control?.pauseRequested === true) {
-        statusEl.textContent = "Paused";
+        if (statusEl) statusEl.textContent = "Paused";
         if (onStatusUpdate) onStatusUpdate("Paused", run.time[run.time.length - 1]);
         return { status: "paused", session: run };
       }
@@ -274,7 +274,7 @@ export async function simulate({ state, runtimeInput, statusEl, downloadFile, se
   }
 
   if (run.algebraicLoopFailed) {
-    statusEl.textContent = `Error: algebraic loop did not converge at t=${run.algebraicLoopTime.toFixed(6)} s`;
+    if (statusEl) statusEl.textContent = `Error: algebraic loop did not converge at t=${run.algebraicLoopTime.toFixed(6)} s`;
     return { status: "error", reason: "algebraic_loop", session: null };
   }
 
@@ -299,7 +299,7 @@ export async function simulate({ state, runtimeInput, statusEl, downloadFile, se
     drawXYScope(scope, state.xySeries, state.xyConnected || []);
   });
 
-  statusEl.textContent = "Done";
+  if (statusEl) statusEl.textContent = "Done";
   if (onStatusUpdate) onStatusUpdate("Done", run.time[run.time.length - 1]);
   return { status: "done", session: null };
 }
