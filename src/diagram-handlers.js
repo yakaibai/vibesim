@@ -12,7 +12,6 @@ let autoRouteInput = null;
 let variablesInput = null;
 let variablesPreview = null;
 let rendererRef = null;
-let updateSubsystemNavUi = null;
 
 export function setStatusEl(el) {
   statusEl = el;
@@ -44,14 +43,6 @@ export function setVariablesPreview(el) {
 
 export function setRendererRef(ref) {
   rendererRef = ref;
-}
-
-export function setUpdateSubsystemNavUi(fn) {
-  updateSubsystemNavUi = fn;
-}
-
-export function getUpdateSubsystemNavUi() {
-  return updateSubsystemNavUi;
 }
 
 const deepClone = (value) => JSON.parse(JSON.stringify(value));

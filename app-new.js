@@ -2,7 +2,7 @@ import { state, markDirty, clearDirty, signalDiagramChanged } from './src/state.
 import { toYAML, serializeDiagram, parseYAML, sanitizeFilename } from './src/file-operations.js';
 import { showConfirmSaveModal, handleSaveAsSubsystem, setStatusEl, setDiagramNameInput, setRuntimeInput, setSimDt, setAutoRouteInput, setVariablesInput, setVariablesPreview } from './src/modal-handlers.js';
 import { handleMenuAction, setFileOpenInput, setDeleteSelectionBtn, setHomeBtn, setZoomInBtn, setZoomOutBtn, performOpen, newDiagram } from './src/menu-handlers.js';
-import { openSubsystemFromBlock, closeSubsystemView, loadDiagram, setSubsystemUpBtn, setUpdateSubsystemNavUi } from './src/diagram-handlers.js';
+import { openSubsystemFromBlock, closeSubsystemView, loadDiagram, setSubsystemUpBtn, updateSubsystemNavUi } from './src/diagram-handlers.js';
 import { setRendererRef, getViewBox, setViewBox, getZoomScale, setZoomScale, updateGrid, clearWorkspace } from './src/workspace-handlers.js';
 import { createRenderer } from "./render.js";
 import { blockLibrary, buildBlockTemplates } from "./blocks/index.js";
@@ -67,14 +67,6 @@ const focusPropertiesPanel = () => {
 
 let updateStabilityPanel = () => {};
 
-const updateSubsystemNavUi = () => {
-  if (!subsystemUpBtn) return;
-  const isRoot = state.subsystemStack.length === 0;
-  subsystemUpBtn.hidden = isRoot;
-  subsystemUpBtn.setAttribute("aria-hidden", String(isRoot));
-  document.body.classList.toggle("is-root-diagram", isRoot);
-};
-
 function init() {
   svg = document.getElementById("svgCanvas");
   blockLayer = document.getElementById("blockLayer");
@@ -110,7 +102,6 @@ function init() {
   
   setRendererRef(rendererRef);
   setSubsystemUpBtn(subsystemUpBtn);
-  setUpdateSubsystemNavUi(updateSubsystemNavUi);
   
   console.log('init() - svg:', svg);
   console.log('init() - blockLibraryGroups:', blockLibraryGroups);
