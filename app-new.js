@@ -102,6 +102,13 @@ function init() {
   
   setRendererRef(rendererRef);
   setSubsystemUpBtn(subsystemUpBtn);
+  setDiagramNameInput(diagramNameInput);
+  setRuntimeInput(runtimeInput);
+  setSimDt(simDt);
+  setAutoRouteInput(autoRouteInput);
+  setVariablesInput(variablesInput);
+  setVariablesPreview(variablesPreview);
+  setStatusEl(statusEl);
   
   console.log('init() - svg:', svg);
   console.log('init() - blockLibraryGroups:', blockLibraryGroups);
