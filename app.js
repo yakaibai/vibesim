@@ -24,6 +24,7 @@ const fileSaveAsBtn = document.getElementById("fileSaveAsBtn");
 const fileOpenInput = document.getElementById("fileOpenInput");
 const loadSubsystemBtn = document.getElementById("loadSubsystemBtn");
 const loadSubsystemInput = document.getElementById("loadSubsystemInput");
+const saveAsSubsystemInput = document.getElementById("saveAsSubsystemInput");
 const subsystemUpBtn = document.getElementById("subsystemUpBtn");
 const codegenBtn = document.getElementById("codegenBtn");
 const codegenLang = document.getElementById("codegenLang");
@@ -443,13 +444,26 @@ const state = {
   spawnIndex: 0,
   simSession: null,
   pauseRequested: false,
+  dirty: false,
+  pendingAction: null,
 };
 
 let fitToDiagram = () => {};
 let updateStabilityPanel = () => {};
 let updateViewBox = () => {};
 let updateViewBoxWithAnchor = () => {};
+let currentFilePath = null;
+
+function markDirty() {
+  state.dirty = true;
+}
+
+function clearDirty() {
+  state.dirty = false;
+}
+
 const signalDiagramChanged = () => {
+  markDirty();
   window.dispatchEvent(new Event("diagramChanged"));
 };
 
@@ -766,11 +780,12 @@ const focusPropertiesPanel = () => {
 
 let renderInspector = () => {};
 let renderer = null;
+const rendererRef = { current: null };
 
 renderInspector = createInspector({
   inspectorBody,
   rotateSelectionBtn,
-  renderer,
+  renderer: rendererRef,
   renderScope,
   signalDiagramChanged,
   onOpenSubsystem: (block) => openSubsystemFromBlock(block),
@@ -1151,6 +1166,129 @@ function loadDiagram(data, options = {}) {
   }
 }
 
+function handleSaveAsSubsystem() {
+  const blocks = Array.from(state.blocks.values());
+  const externalInputs = collectExternalPorts(blocks, "labelSource");
+  const externalOutputs = collectExternalPorts(blocks, "labelSink");
+  
+  if (!externalInputs.length && !externalOutputs.length) {
+    if (statusEl) {
+      statusEl.textContent = "Cannot save as subsystem: No external ports found. Add labelSource (input) or labelSink (output) blocks and mark them as 'Is external port'.";
+    }
+    return;
+  }
+  
+  const modal = document.getElementById("subsystemNameModal");
+  const nameInput = document.getElementById("subsystemNameInput");
+  
+  if (!modal || !nameInput) {
+    if (statusEl) statusEl.textContent = "Error: Subsystem name dialog not found";
+    return;
+  }
+  
+  nameInput.value = sanitizeFilename(state.diagramName);
+  modal.classList.add("show");
+  nameInput.focus();
+  nameInput.select();
+}
+
+function confirmSubsystemName() {
+  const modal = document.getElementById("subsystemNameModal");
+  const nameInput = document.getElementById("subsystemNameInput");
+  
+  if (!modal || !nameInput) return;
+  
+  const modelName = String(nameInput.value || "").trim();
+  
+  if (!modelName) {
+    if (statusEl) statusEl.textContent = "Model name cannot be empty";
+    return;
+  }
+  
+  const defaultFileName = `${sanitizeFilename(modelName)}.mos`;
+  
+  if (window.electron) {
+    const diagramData = serializeDiagram(state);
+    diagramData.name = modelName;
+    const yaml = toYAML(diagramData);
+    window.electron.saveSubsystemAs(yaml, defaultFileName);
+  } else {
+    const diagramData = serializeDiagram(state);
+    diagramData.name = modelName;
+    const yaml = toYAML(diagramData);
+    const blob = new Blob([yaml], { type: "text/yaml" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = defaultFileName;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  }
+  
+  modal.classList.remove("show");
+  
+  if (statusEl) {
+    statusEl.textContent = `Saved subsystem: ${modelName}`;
+  }
+}
+
+function showConfirmSaveModal(callback) {
+  const modal = document.getElementById("confirmSaveModal");
+  if (!modal) {
+    callback(false);
+    return;
+  }
+  
+  const saveBtn = document.getElementById("saveConfirm");
+  const dontSaveBtn = document.getElementById("dontSaveConfirm");
+  const closeBtn = document.getElementById("closeConfirmSaveModal");
+  
+  const cleanup = () => {
+    saveBtn.removeEventListener('click', onSave);
+    dontSaveBtn.removeEventListener('click', onDontSave);
+    closeBtn.removeEventListener('click', onClose);
+    modal.removeEventListener('click', onBackdropClick);
+  };
+  
+  const onSave = () => {
+    cleanup();
+    modal.classList.remove("show");
+    callback(true);
+  };
+  
+  const onDontSave = () => {
+    cleanup();
+    modal.classList.remove("show");
+    callback(false);
+  };
+  
+  const onClose = () => {
+    cleanup();
+    modal.classList.remove("show");
+    callback(null);
+  };
+  
+  const onBackdropClick = (e) => {
+    if (e.target === modal) {
+      onClose();
+    }
+  };
+  
+  saveBtn.addEventListener('click', onSave);
+  dontSaveBtn.addEventListener('click', onDontSave);
+  closeBtn.addEventListener('click', onClose);
+  modal.addEventListener('click', onBackdropClick);
+  
+  modal.classList.add("show");
+}
+
+function closeSubsystemNameModal() {
+  const modal = document.getElementById("subsystemNameModal");
+  if (modal) modal.classList.remove("show");
+}
+
 function newDiagram() {
   state.simSession = null;
   state.pauseRequested = false;
@@ -1489,6 +1627,7 @@ function init() {
         if (statusEl) statusEl.textContent = message;
       },
     });
+    rendererRef.current = renderer;
     console.log('init() - renderer initialized');
   }
   
@@ -2148,20 +2287,32 @@ function init() {
     loadSubsystemInput.addEventListener("change", () => {
       const file = loadSubsystemInput.files?.[0];
       if (!file) return;
+      
+      const fileName = file.name;
+      
+      if (!fileName.toLowerCase().endsWith('.mos')) {
+        if (statusEl) statusEl.textContent = `Invalid file type: ${fileName}. Only .mos files are supported for subsystems.`;
+        loadSubsystemInput.value = "";
+        return;
+      }
+      
+      const fileKey = fileName.replace(/\.mos$/i, "").toLowerCase();
+      
+      if (state.loadedSubsystems.has(fileKey)) {
+        if (statusEl) statusEl.textContent = `Subsystem already loaded: ${fileName}`;
+        loadSubsystemInput.value = "";
+        return;
+      }
+      
       const reader = new FileReader();
       reader.onload = () => {
         try {
           const text = String(reader.result || "");
           const data = parseYAML(text);
-          const baseName = file.name.replace(/\.(ya?ml)$/i, "") || "Subsystem";
+          const baseName = fileName.replace(/\.mos$/i, "") || "Subsystem";
           const spec = buildSubsystemSpec(data, baseName);
-          const keyBase = sanitizeFilename(spec.name).toLowerCase() || "subsystem";
-          let key = keyBase;
-          let index = 2;
-          while (state.loadedSubsystems.has(key)) {
-            key = `${keyBase}_${index}`;
-            index += 1;
-          }
+          const key = sanitizeFilename(spec.name).toLowerCase() || fileKey;
+          
           state.loadedSubsystems.set(key, spec);
           renderBlockLibrary();
           if (statusEl) statusEl.textContent = `Loaded subsystem: ${spec.name}`;
@@ -2173,8 +2324,6 @@ function init() {
       loadSubsystemInput.value = "";
     });
   }
-
-  let currentFilePath = null;
 
   const isElectron = typeof window !== 'undefined' && window.electron;
 
@@ -2881,38 +3030,137 @@ function initVSCodeUI() {
     });
   });
   
+  function performOpen() {
+    if (window.electron) {
+      window.electron.openFile().then(result => {
+        if (result.success === true) {
+          try {
+            const data = parseYAML(result.content);
+            loadDiagram(data);
+            currentFilePath = result.fileName;
+            clearDirty();
+            if (statusEl) statusEl.textContent = `Loaded: ${result.fileName}`;
+          } catch (error) {
+            if (statusEl) statusEl.textContent = `Load error: ${error?.message || error}`;
+          }
+        }
+      }).catch(error => {
+        if (statusEl) statusEl.textContent = `Open error: ${error?.message || error}`;
+      });
+    } else {
+      fileOpenInput.click();
+    }
+  }
+  
   function handleMenuAction(action) {
     switch (action) {
       case 'new':
-        newDiagram();
-        break;
-      case 'open':
-        if (window.electron) {
-          window.electron.openFile().then(result => {
-            if (result.success === true) {
-              try {
-                const data = parseYAML(result.content);
-                loadDiagram(data);
-                currentFilePath = result.fileName;
-                if (statusEl) statusEl.textContent = `Loaded: ${result.fileName}`;
-              } catch (error) {
-                if (statusEl) statusEl.textContent = `Load error: ${error?.message || error}`;
+        if (state.dirty) {
+          showConfirmSaveModal((shouldSave) => {
+            if (shouldSave === true) {
+              const yaml = toYAML(serializeDiagram(state));
+              if (window.electron) {
+                if (currentFilePath) {
+                  window.electron.saveFile(yaml, currentFilePath).then(result => {
+                    if (result.success) {
+                      clearDirty();
+                      newDiagram();
+                    }
+                  });
+                } else {
+                  window.electron.saveFileAs(yaml, `${sanitizeFilename(state.diagramName)}.yaml`).then(result => {
+                    if (result.success && !result.canceled) {
+                      clearDirty();
+                      newDiagram();
+                    } else if (!result.canceled) {
+                      newDiagram();
+                    }
+                  });
+                }
+              } else {
+                const blob = new Blob([yaml], { type: "text/yaml" });
+                const url = URL.createObjectURL(blob);
+                const link = document.createElement("a");
+                link.href = url;
+                link.download = currentFilePath || `${sanitizeFilename(state.diagramName)}.yaml`;
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+                URL.revokeObjectURL(url);
+                clearDirty();
+                newDiagram();
               }
+            } else if (shouldSave === false) {
+              newDiagram();
             }
-          }).catch(error => {
-            if (statusEl) statusEl.textContent = `Open error: ${error?.message || error}`;
           });
         } else {
-          fileOpenInput.click();
+          newDiagram();
+        }
+        break;
+      case 'open':
+        if (state.dirty) {
+          showConfirmSaveModal((shouldSave) => {
+            if (shouldSave === true) {
+              const yaml = toYAML(serializeDiagram(state));
+              if (window.electron) {
+                if (currentFilePath) {
+                  window.electron.saveFile(yaml, currentFilePath).then(result => {
+                    if (result.success) {
+                      clearDirty();
+                      performOpen();
+                    }
+                  });
+                } else {
+                  window.electron.saveFileAs(yaml, `${sanitizeFilename(state.diagramName)}.yaml`).then(result => {
+                    if (result.success && !result.canceled) {
+                      clearDirty();
+                      performOpen();
+                    } else if (!result.canceled) {
+                      performOpen();
+                    }
+                  });
+                }
+              } else {
+                const blob = new Blob([yaml], { type: "text/yaml" });
+                const url = URL.createObjectURL(blob);
+                const link = document.createElement("a");
+                link.href = url;
+                link.download = currentFilePath || `${sanitizeFilename(state.diagramName)}.yaml`;
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+                URL.revokeObjectURL(url);
+                clearDirty();
+                performOpen();
+              }
+            } else if (shouldSave === false) {
+              performOpen();
+            }
+          });
+        } else {
+          performOpen();
         }
         break;
       case 'save':
         const yaml = toYAML(serializeDiagram(state));
         if (window.electron) {
           if (currentFilePath) {
-            window.electron.saveFile(yaml, currentFilePath);
+            window.electron.saveFile(yaml, currentFilePath).then(result => {
+              if (result.success) {
+                clearDirty();
+                if (statusEl) statusEl.textContent = `Saved: ${currentFilePath}`;
+              } else {
+                if (statusEl) statusEl.textContent = `Save error: ${result.error}`;
+              }
+            });
           } else {
-            window.electron.saveFileAs(yaml, `${sanitizeFilename(state.diagramName)}.yaml`);
+            window.electron.saveFileAs(yaml, `${sanitizeFilename(state.diagramName)}.yaml`).then(result => {
+              if (result.success && !result.canceled) {
+                clearDirty();
+                if (statusEl) statusEl.textContent = `Saved: ${result.filePath}`;
+              }
+            });
           }
         } else {
           const blob = new Blob([yaml], { type: "text/yaml" });
@@ -2924,12 +3172,17 @@ function initVSCodeUI() {
           link.click();
           document.body.removeChild(link);
           URL.revokeObjectURL(url);
+          clearDirty();
         }
         break;
       case 'saveAs':
         if (window.electron) {
           const yaml = toYAML(serializeDiagram(state));
-          window.electron.saveFileAs(yaml, `${sanitizeFilename(state.diagramName)}.yaml`);
+          window.electron.saveFileAs(yaml, `${sanitizeFilename(state.diagramName)}.yaml`).then(result => {
+            if (result.success && !result.canceled) {
+              clearDirty();
+            }
+          });
         } else {
           const yaml = toYAML(serializeDiagram(state));
           const blob = new Blob([yaml], { type: "text/yaml" });
@@ -2941,11 +3194,42 @@ function initVSCodeUI() {
           link.click();
           document.body.removeChild(link);
           URL.revokeObjectURL(url);
+          clearDirty();
         }
+        break;
+      case 'saveAsSubsystem':
+        handleSaveAsSubsystem();
         break;
       case 'exit':
         if (window.electron) {
-          window.electron.closeWindow();
+          if (state.dirty) {
+            showConfirmSaveModal((shouldSave) => {
+              if (shouldSave === true) {
+                const yaml = toYAML(serializeDiagram(state));
+                if (currentFilePath) {
+                  window.electron.saveFile(yaml, currentFilePath).then(result => {
+                    if (result.success) {
+                      clearDirty();
+                      window.electron.closeWindow();
+                    }
+                  });
+                } else {
+                  window.electron.saveFileAs(yaml, `${sanitizeFilename(state.diagramName)}.yaml`).then(result => {
+                    if (result.success && !result.canceled) {
+                      clearDirty();
+                      window.electron.closeWindow();
+                    } else if (!result.canceled) {
+                      window.electron.closeWindow();
+                    }
+                  });
+                }
+              } else if (shouldSave === false) {
+                window.electron.closeWindow();
+              }
+            });
+          } else {
+            window.electron.closeWindow();
+          }
         }
         break;
       case 'undo':
@@ -3098,6 +3382,40 @@ function initVSCodeUI() {
     });
   }
   
+  const subsystemNameModal = document.getElementById('subsystemNameModal');
+  const closeSubsystemNameModalBtn = document.getElementById('closeSubsystemNameModal');
+  const cancelSubsystemNameBtn = document.getElementById('cancelSubsystemName');
+  const confirmSubsystemNameBtn = document.getElementById('confirmSubsystemName');
+  
+  if (subsystemNameModal && closeSubsystemNameModalBtn) {
+    closeSubsystemNameModalBtn.addEventListener('click', closeSubsystemNameModal);
+  }
+  
+  if (subsystemNameModal && cancelSubsystemNameBtn) {
+    cancelSubsystemNameBtn.addEventListener('click', closeSubsystemNameModal);
+  }
+  
+  if (subsystemNameModal && confirmSubsystemNameBtn) {
+    confirmSubsystemNameBtn.addEventListener('click', confirmSubsystemName);
+  }
+  
+  if (subsystemNameModal) {
+    subsystemNameModal.addEventListener('click', (e) => {
+      if (e.target === subsystemNameModal) {
+        closeSubsystemNameModal();
+      }
+    });
+  }
+  
+  const subsystemNameInput = document.getElementById('subsystemNameInput');
+  if (subsystemNameInput) {
+    subsystemNameInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        confirmSubsystemName();
+      }
+    });
+  }
+  
   // 状态栏按钮事件处理
   const homeBtn = document.getElementById('homeBtn');
   const zoomInBtn = document.getElementById('zoomInBtn');
@@ -3138,6 +3456,13 @@ function initVSCodeUI() {
       console.log('zoomOutBtn - new zoomScale:', zoomScale);
     });
   }
+  
+  window.addEventListener('beforeunload', (e) => {
+    if (state.dirty) {
+      e.preventDefault();
+      e.returnValue = '';
+    }
+  });
 }
 // 初始化VSCode UI
 document.addEventListener('DOMContentLoaded', initVSCodeUI);
