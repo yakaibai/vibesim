@@ -4,7 +4,8 @@ import { showConfirmSaveModal, handleSaveAsSubsystem, setStatusEl, setDiagramNam
 import { handleMenuAction, setFileOpenInput, setDeleteSelectionBtn, setHomeBtn, setZoomInBtn, setZoomOutBtn, performOpen, newDiagram } from './src/menu-handlers.js';
 import { createRenderer } from "./render.js";
 import { blockLibrary, buildBlockTemplates } from "./blocks/index.js";
-import { diagramToFRD, stabilityMargins } from "./control/margins.js";
+import { diagramToFRD } from "./control/diagram.js";
+import { stabilityMargins } from "./control/margins.js";
 import { parseVariables } from "./utils/expr.js";
 
 let svg = null;
