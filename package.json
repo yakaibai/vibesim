@@ -2,7 +2,7 @@
   "name": "vibesim",
   "private": true,
   "type": "module",
-  "version": "1.0.4",
+  "version": "1.0.5",
   "description": "A block diagram control system simulator",
   "main": "main.js",
   "scripts": {
@@ -25,7 +25,9 @@
     "win": {
       "target": [
         "dir"
-      ]
+      ],
+      "sign": null,
+      "signAndEditExecutable": false
     },
     "electronDownload": {
       "mirror": "https://npmmirror.com/mirrors/electron/"

@@ -21,12 +21,18 @@ contextBridge.exposeInMainWorld(
     onFileOpened: (callback) => ipcRenderer.on('file-opened', (event, data) => callback(data)),
     onFileSaveRequest: (callback) => ipcRenderer.on('file-save-request', (event, data) => callback(data)),
     onFileSaveAsRequest: (callback) => ipcRenderer.on('file-save-as-request', (event) => callback()),
+    onCheckBeforeClose: (callback) => ipcRenderer.on('check-before-close', (event) => callback()),
+    
+    // Send events
+    canClose: () => ipcRenderer.send('can-close'),
+    cancelClose: () => ipcRenderer.send('cancel-close'),
     
     // Remove event listeners
     removeAllListeners: () => {
       ipcRenderer.removeAllListeners('file-opened');
       ipcRenderer.removeAllListeners('file-save-request');
       ipcRenderer.removeAllListeners('file-save-as-request');
+      ipcRenderer.removeAllListeners('check-before-close');
     }
   }
 );

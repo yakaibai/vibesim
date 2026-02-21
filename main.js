@@ -185,9 +185,23 @@ ipcMain.on('window-maximize', () => {
   }
 });
 
-ipcMain.on('window-close', () => {
+ipcMain.on('window-close', async () => {
   if (mainWindow) {
-    mainWindow.close();
+    mainWindow.webContents.send('check-before-close');
+    const result = await new Promise((resolve) => {
+      const timeout = setTimeout(() => resolve(true), 100);
+      ipcMain.once('can-close', () => {
+        clearTimeout(timeout);
+        resolve(true);
+      });
+      ipcMain.once('cancel-close', () => {
+        clearTimeout(timeout);
+        resolve(false);
+      });
+    });
+    if (result) {
+      mainWindow.close();
+    }
   }
 });
 

@@ -1,4 +1,4 @@
-import { state, markDirty, clearDirty, signalDiagramChanged } from './state.js';
+import { state, markDirty, clearDirty, signalDiagramChanged, getFitToDiagram } from './state.js';
 import { serializeDiagram, parseYAML, sanitizeFilename } from './file-operations.js';
 import { captureRoutePointsSnapshot, applyRoutePointsSnapshot } from "../utils/route-points.js";
 import { collectExternalPorts } from "../utils/subsystem-ports.js";
@@ -140,7 +140,7 @@ export function closeSubsystemView() {
     host.params.name = spec.name;
     markDirty();
     if (rendererRef?.current) {
-      rendererRef.current.updateBlock(host.id);
+      rendererRef.current.updateBlockLabel(host);
     }
   }
   updateSubsystemNavUi();
@@ -246,38 +246,101 @@ export function loadDiagram(data, options = {}) {
     return points;
   };
 
+  let loadedPointCount = 0;
+
   state.blocks.clear();
   state.connections = [];
+  
   blocks.forEach((blockData) => {
-    if (!blockData || typeof blockData !== "object") return;
-    const block = {
+    if (!blockData || !blockData.type) return;
+    rendererRef.current?.createBlock(blockData.type, Number(blockData.x) || 0, Number(blockData.y) || 0, {
       id: blockData.id,
-      type: blockData.type,
-      x: Number(blockData.x) || 0,
-      y: Number(blockData.y) || 0,
       rotation: Number(blockData.rotation) || 0,
       params: blockData.params || {},
-    };
-    state.blocks.set(block.id, block);
+    });
+    const created = state.blocks.get(blockData.id);
+    if (created && rendererRef.current?.updateBlockLabel) {
+      rendererRef.current.updateBlockLabel(created);
+    }
   });
 
   connections.forEach((connData) => {
-    if (!connData || typeof connData !== "object") return;
-    const connection = {
-      id: connData.id,
-      from: connData.from,
-      fromIndex: Number(connData.fromIndex) || 0,
-      to: connData.to,
-      toIndex: Number(connData.toIndex) || 0,
-      points: takePointsForKey(connectionKey(connData)),
-    };
-    state.connections.push(connection);
+    if (!connData) return;
+    if (!state.blocks.has(connData.from) || !state.blocks.has(connData.to)) return;
+    const beforeLen = state.connections.length;
+    const createdConn = rendererRef.current?.createConnection(connData.from, connData.to, connData.toIndex ?? 0, connData.fromIndex ?? 0);
+    if (!createdConn) {
+      const createdError = typeof rendererRef.current?.getLastConnectionError === "function"
+        ? rendererRef.current.getLastConnectionError()
+        : null;
+      if (createdError?.reason === "input_occupied") {
+        throw new Error(
+          `Invalid diagram: multiple outputs connected to ${connData.to}.in${Number(connData.toIndex ?? 0)}.`
+        );
+      }
+      if (createdError?.reason === "duplicate") return;
+      throw new Error(createdError?.message || "Invalid connection in loaded diagram.");
+    }
+    if (state.connections.length <= beforeLen) return;
+    const created = state.connections[state.connections.length - 1];
+    const key = connectionKey(created);
+    const points = takePointsForKey(key);
+    if (Array.isArray(points) && points.length >= 2) {
+      created.points = points.map((pt) => ({ x: pt.x, y: pt.y }));
+      loadedPointCount += 1;
+    }
   });
 
   state.loadingDiagram = false;
-  if (rendererRef?.current) {
-    rendererRef.current.updateConnections(state.autoRoute);
+  state.routingDirty = true;
+  
+  const fitToDiagram = getFitToDiagram();
+  if (typeof fitToDiagram === "function") {
+    fitToDiagram();
   }
+  
+  if (loadedPointCount > 0) {
+    state.fastRouting = false;
+    state.routingDirty = false;
+    if (state.dirtyBlocks) state.dirtyBlocks.clear();
+    if (state.dirtyConnections) state.dirtyConnections.clear();
+    if (rendererRef?.current?.renderCurrentWirePaths) {
+      rendererRef.current.renderCurrentWirePaths(true);
+    }
+    const shouldAutoRoute = state.autoRoute || hasConnectionsWithoutPoints;
+    if (shouldAutoRoute) {
+      requestAnimationFrame(() => {
+        if (rendererRef?.current?.renderCurrentWirePaths) {
+          rendererRef.current.renderCurrentWirePaths(true);
+        }
+        requestAnimationFrame(() => {
+          setTimeout(() => {
+            if (rendererRef?.current?.forceFullRoute) {
+              rendererRef.current.forceFullRoute(10000);
+            }
+          }, 0);
+        });
+      });
+    }
+  } else if (state.autoRoute) {
+    state.fastRouting = true;
+    state.routingDirty = true;
+    state.dirtyConnections = new Set(state.connections);
+    if (rendererRef?.current?.updateConnections) {
+      rendererRef.current.updateConnections(true);
+    }
+    requestAnimationFrame(() => {
+      setTimeout(() => {
+        state.fastRouting = false;
+        if (rendererRef?.current?.forceFullRoute) {
+          rendererRef.current.forceFullRoute(10000);
+        }
+      }, 0);
+    });
+  } else if (rendererRef?.current?.updateConnections) {
+    rendererRef.current.updateConnections(true);
+  }
+  
   signalDiagramChanged();
   if (statusEl) statusEl.textContent = `Loaded diagram: ${state.diagramName}`;
 }

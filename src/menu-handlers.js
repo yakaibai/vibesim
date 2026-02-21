@@ -1,6 +1,7 @@
 import { state, clearDirty, getCurrentFilePath, setCurrentFilePath } from './state.js';
-import { toYAML, serializeDiagram, sanitizeFilename } from './file-operations.js';
+import { toYAML, serializeDiagram, parseYAML, sanitizeFilename } from './file-operations.js';
 import { showConfirmSaveModal, handleSaveAsSubsystem } from './modal-handlers.js';
+import { loadDiagram } from './diagram-handlers.js';
 
 let statusEl = null;
 let currentFilePath = null;

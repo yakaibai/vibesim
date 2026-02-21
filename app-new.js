@@ -1,9 +1,9 @@
-import { state, markDirty, clearDirty, signalDiagramChanged } from './src/state.js';
+import { state, markDirty, clearDirty, signalDiagramChanged, setCurrentFilePath, getCurrentFilePath, setFitToDiagram, setUpdateStabilityPanel } from './src/state.js';
 import { toYAML, serializeDiagram, parseYAML, sanitizeFilename } from './src/file-operations.js';
 import { showConfirmSaveModal, handleSaveAsSubsystem, setStatusEl, setDiagramNameInput, setRuntimeInput, setSimDt, setAutoRouteInput, setVariablesInput, setVariablesPreview } from './src/modal-handlers.js';
-import { handleMenuAction, setFileOpenInput, setDeleteSelectionBtn, setHomeBtn, setZoomInBtn, setZoomOutBtn, performOpen, newDiagram } from './src/menu-handlers.js';
-import { openSubsystemFromBlock, closeSubsystemView, loadDiagram, setSubsystemUpBtn, updateSubsystemNavUi } from './src/diagram-handlers.js';
-import { setRendererRef, getViewBox, setViewBox, getZoomScale, setZoomScale, updateGrid, clearWorkspace } from './src/workspace-handlers.js';
+import { handleMenuAction, setFileOpenInput, setDeleteSelectionBtn, setHomeBtn as setHomeBtnMenu, setZoomInBtn as setZoomInBtnMenu, setZoomOutBtn as setZoomOutBtnMenu, performOpen, newDiagram } from './src/menu-handlers.js';
+import { openSubsystemFromBlock, closeSubsystemView, loadDiagram, setSubsystemUpBtn, updateSubsystemNavUi, setRendererRef as setRendererRefDiagram } from "./src/diagram-handlers.js";
+import { setRendererRef, getViewBox, setViewBox, getZoomScale, setZoomScale, updateGrid, clearWorkspace, initViewBox, setSvg, setUpdateStatusBar } from './src/workspace-handlers.js';
 import { createRenderer } from "./render.js";
 import { blockLibrary, buildBlockTemplates } from "./blocks/index.js";
 import { diagramToFRD } from "./control/diagram.js";
@@ -12,9 +12,33 @@ import { parseVariables } from "./utils/expr.js";
 import { createInspector } from "./blocks/inspector.js";
 import { simulate, renderScope } from "./sim.js";
 import { setupGlobalErrorHandlers, createErrorLogButton, showErrorLogInConsole, getLatestErrors } from "./browser-error-logger.js";
+import { renderBlockLibrary, setBlockLibraryGroups, setBlockLibrary, setGridSize, setRendererRef as setRendererRefLibrary, setStatusEl as setStatusElLibrary } from "./src/block-library-handlers.js";
+import { initSidebarUI, initZoomButtons, setStatusElRef, setHomeBtnRef, setZoomInBtnRef, setZoomOutBtnRef, initWindowControls, initModals } from "./src/ui-handlers.js";
+import { initEventListeners, setRendererRef as setRendererRefEvent, setStatusEl as setStatusElEvent, setRuntimeInput as setRuntimeInputEvent, setInspectorBody, setRotateSelectionBtn, setMarginLoopSelect, setMarginOutputText, setRenderInspector as setRenderInspectorEvent } from "./src/event-handlers.js";
 
 setupGlobalErrorHandlers();
 createErrorLogButton();
+
+const themes = [
+  { id: "signal-slate", name: "Signal Slate" },
+  { id: "analog-sand", name: "Analog Sand" },
+  { id: "control-grid", name: "Control Grid" },
+  { id: "orbit-ice", name: "Orbit Ice" },
+  { id: "lab-white", name: "Lab White" },
+  { id: "circuit-mint", name: "Circuit Mint" },
+  { id: "radar-tan", name: "Radar Tan" },
+  { id: "blueprint-lite", name: "Blueprint Lite" },
+  { id: "quartz-steel", name: "Quartz Steel" },
+  { id: "night-shift", name: "Night Shift" },
+  { id: "terminal-ink", name: "Terminal Ink" },
+  { id: "violet-burn", name: "Violet Burn" },
+  { id: "noir-cyan", name: "Noir Cyan" },
+];
+
+const applyTheme = (themeId) => {
+  const chosen = themes.find((theme) => theme.id === themeId) || themes[0];
+  document.body.dataset.theme = chosen.id;
+};
 
 let svg = null;
 let blockLayer = null;
@@ -71,7 +95,45 @@ const focusPropertiesPanel = () => {
 
 let updateStabilityPanel = () => {};
 
-function init() {
+const getViewportSize = () => {
+  const canvas = document.getElementById("canvas");
+  if (!canvas) return { w: 800, h: 600 };
+  const rect = canvas.getBoundingClientRect();
+  return { w: rect.width, h: rect.height };
+};
+
+const fitToDiagram = () => {
+  if (state.blocks.size === 0) {
+    initViewBox();
+    return;
+  }
+  let minX = Infinity;
+  let minY = Infinity;
+  let maxX = -Infinity;
+  let maxY = -Infinity;
+  state.blocks.forEach((block) => {
+    minX = Math.min(minX, block.x);
+    minY = Math.min(minY, block.y);
+    maxX = Math.max(maxX, block.x + block.width);
+    maxY = Math.max(maxY, block.y + block.height);
+  });
+  const pad = 60;
+  minX -= pad;
+  minY -= pad;
+  maxX += pad;
+  maxY += pad;
+  const boundsW = Math.max(1, maxX - minX);
+  const boundsH = Math.max(1, maxY - minY);
+  const { w, h } = getViewportSize();
+  const scale = Math.max(0.1, Math.min(3, Math.min(w / boundsW, h / boundsH)));
+  setZoomScale(scale);
+  const center = { x: minX + boundsW / 2, y: minY + boundsH / 2 };
+  const newW = w / scale;
+  const newH = h / scale;
+  setViewBox({ x: center.x - newW / 2, y: center.y - newH / 2, w: newW, h: newH });
+};
+
+export function init() {
   svg = document.getElementById("svgCanvas");
   blockLayer = document.getElementById("blockLayer");
   wireLayer = document.getElementById("wireLayer");
@@ -82,7 +144,7 @@ function init() {
   statusBarZoom = document.getElementById("statusBarZoom");
   statusBarBlocks = document.getElementById("statusBarBlocks");
   statusBarConnections = document.getElementById("statusBarConnections");
-  subsystemUpBtn = document.getElementById("subsystemUp");
+  subsystemUpBtn = document.getElementById("subsystemUpBtn");
   marginLoopSelect = document.getElementById("marginLoopSelect");
   marginOutputText = document.getElementById("marginOutputText");
   fileOpenInput = document.getElementById("fileOpenInput");
@@ -91,13 +153,13 @@ function init() {
   loadInput = document.getElementById("loadInput");
   deleteSelectionBtn = document.getElementById("deleteSelection");
   rotateSelectionBtn = document.getElementById("rotateSelection");
-  homeBtn = document.getElementById("home");
-  zoomInBtn = document.getElementById("zoomIn");
-  zoomOutBtn = document.getElementById("zoomOut");
+  homeBtn = document.getElementById("homeBtn");
+  zoomInBtn = document.getElementById("zoomInBtn");
+  zoomOutBtn = document.getElementById("zoomOutBtn");
   printBtn = document.getElementById("print");
   statusEl = document.getElementById("status");
   diagramNameInput = document.getElementById("diagramName");
-  runtimeInput = document.getElementById("runtime");
+  runtimeInput = document.getElementById("runtimeInput");
   simDt = document.getElementById("simDt");
   autoRouteInput = document.getElementById("autoRoute");
   variablesInput = document.getElementById("variablesInput");
@@ -105,6 +167,8 @@ function init() {
   inspectorBody = document.getElementById("inspectorBody");
   
   setRendererRef(rendererRef);
+  setRendererRefDiagram(rendererRef);
+  setRendererRefLibrary(rendererRef);
   setSubsystemUpBtn(subsystemUpBtn);
   setDiagramNameInput(diagramNameInput);
   setRuntimeInput(runtimeInput);
@@ -113,6 +177,33 @@ function init() {
   setVariablesInput(variablesInput);
   setVariablesPreview(variablesPreview);
   setStatusEl(statusEl);
+  setStatusElLibrary(statusEl);
+  setBlockLibraryGroups(blockLibraryGroups);
+  setBlockLibrary(blockLibrary);
+  setGridSize(GRID_SIZE);
+  setSvg(svg);
+  setUpdateStatusBar(updateStatusBar);
+  setStatusElRef(statusEl);
+  setHomeBtnRef(homeBtn);
+  setZoomInBtnRef(zoomInBtn);
+  setZoomOutBtnRef(zoomOutBtn);
+  
+  setHomeBtnMenu(homeBtn);
+  setZoomInBtnMenu(zoomInBtn);
+  setZoomOutBtnMenu(zoomOutBtn);
+  
+  setRendererRefEvent(rendererRef);
+  setStatusElEvent(statusEl);
+  setRuntimeInputEvent(runtimeInput);
+  setInspectorBody(inspectorBody);
+  setRotateSelectionBtn(rotateSelectionBtn);
+  setMarginLoopSelect(marginLoopSelect);
+  setMarginOutputText(marginOutputText);
+  
+  setRenderInspectorEvent(renderInspector);
+  
+  setFitToDiagram(fitToDiagram);
+  setUpdateStabilityPanel(updateStabilityPanel);
   
   console.log('init() - svg:', svg);
   console.log('init() - blockLibraryGroups:', blockLibraryGroups);
@@ -158,6 +249,8 @@ function init() {
     },
   }).renderInspector;
   
+  setRenderInspectorEvent(renderInspector);
+  
   if (inspectorBody) {
     inspectorBody.addEventListener("input", (event) => {
       const target = event.target;
@@ -196,27 +289,10 @@ function init() {
   }
   updateStabilityPanel();
 
-  renderBlockLibrary();
-  if (blockLibraryGroups) {
-    blockLibraryGroups.addEventListener("click", () => {
-      const button = event.target.closest(".tool");
-      if (!button) return;
-      const type = button.dataset.type;
-      const subsystemKey = button.dataset.subsystemKey || "";
-      const centerX = viewBox.x + viewBox.w / 2;
-      const centerY = viewBox.y + viewBox.h / 2;
-      const block = spawnBlock(type, centerX, centerY, subsystemKey);
-      if (block) {
-        state.routingDirty = true;
-        renderer.updateConnections(true);
-        signalDiagramChanged();
-      }
-    });
-  }
+  applyTheme(themes[0].id);
+  window.addEventListener("diagramChanged", updateStabilityPanel);
 
-  const variablesInput = document.getElementById("variablesInput");
   const applyVariablesBtn = document.getElementById("applyVariables");
-  const variablesPreview = document.getElementById("variablesPreview");
   const updateVariables = () => {
     state.variablesText = variablesInput?.value || "";
     const parsed = parseVariables(state.variablesText);
@@ -234,77 +310,109 @@ function init() {
   if (variablesInput) updateVariables();
 
   renderBlockLibrary();
-  if (blockLibraryGroups) {
-    blockLibraryGroups.addEventListener("click", (event) => {
-      const button = event.target.closest(".tool");
-      if (!button) return;
-      const type = button.dataset.type;
-      const subsystemKey = button.dataset.subsystemKey || "";
-      const centerX = viewBox.x + viewBox.w / 2;
-      const centerY = viewBox.y + viewBox.h / 2;
-      const block = spawnBlock(type, centerX, centerY, subsystemKey);
-      if (block) {
-        state.routingDirty = true;
-        renderer.updateConnections(true);
-        signalDiagramChanged();
-      }
-    });
-  }
 
   initViewBox();
 
-  if (fileSaveAsBtn) {
-      fileSaveAsBtn.addEventListener("click", () => {
-        const yaml = toYAML(serializeDiagram(state));
-        const blob = new Blob([yaml], { type: "text/yaml" });
-        const url = URL.createObjectURL(blob);
-        const link = document.createElement("a");
-        link.href = url;
-        link.download = `${sanitizeFilename(state.diagramName)}.yaml`;
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-        URL.revokeObjectURL(url);
-        if (statusEl) statusEl.textContent = "Saved diagram";
-      });
-    }
+  const isElectron = typeof window !== 'undefined' && window.electron;
 
-    const menuTrigger = document.querySelector(".menu-trigger");
-    const menu = document.querySelector(".menu");
-    
-    if (menuTrigger && menu) {
-      menuTrigger.addEventListener("click", (e) => {
-        e.stopPropagation();
-        menu.classList.toggle("active");
-      });
-      
-      document.addEventListener("click", () => {
-        menu.classList.remove("active");
-      });
-      
-      menu.addEventListener("click", (e) => {
-        e.stopPropagation();
-      });
-    }
-
-  const menubarDropdownItems = document.querySelectorAll('.menubar-dropdown .menubar-item');
-  menubarDropdownItems.forEach(item => {
-    item.addEventListener('click', (e) => {
-      e.stopPropagation();
-      const action = item.dataset.action;
-      if (action) {
-        menubarDropdowns.forEach(dropdown => dropdown.style.display = 'none');
-        handleMenuAction(action);
+  if (isElectron) {
+    window.electron.onFileOpened(({ filePath, content, fileName }) => {
+      try {
+        const data = parseYAML(content);
+        loadDiagram(data);
+        setCurrentFilePath(filePath);
+        if (statusEl) statusEl.textContent = `Loaded: ${fileName}`;
+      } catch (error) {
+        if (statusEl) statusEl.textContent = `Load error: ${error?.message || error}`;
       }
     });
-  });
 
-  window.addEventListener('beforeunload', (e) => {
-    if (state.dirty) {
-      e.preventDefault();
-      e.returnValue = '';
+    window.electron.onFileSaveRequest(async ({ filePath }) => {
+      const yaml = toYAML(serializeDiagram(state));
+      if (filePath) {
+        const result = await window.electron.saveFile(yaml, filePath);
+        if (result.success === true) {
+          setCurrentFilePath(result.filePath);
+          if (statusEl) statusEl.textContent = `Saved: ${filePath}`;
+        } else {
+          if (statusEl) statusEl.textContent = `Save error: ${result.error}`;
+        }
+      }
+    });
+
+    window.electron.onCheckBeforeClose(async () => {
+      if (state.dirty) {
+        const shouldSave = await showConfirmSaveModal();
+        if (shouldSave === 'cancel') {
+          window.electron.cancelClose();
+        } else if (shouldSave === 'save') {
+          const yaml = toYAML(serializeDiagram(state));
+          const filePath = getCurrentFilePath();
+          if (filePath) {
+            const result = await window.electron.saveFile(yaml, filePath);
+            if (result.success === true) {
+              clearDirty();
+              window.electron.canClose();
+            } else {
+              window.electron.cancelClose();
+            }
+          } else {
+            const defaultName = sanitizeFilename(state.diagramName || "vibesim") + ".yaml";
+            const result = await window.electron.saveFileAs(yaml, defaultName);
+            if (result.success === true) {
+              setCurrentFilePath(result.filePath);
+              clearDirty();
+              window.electron.canClose();
+            } else {
+              window.electron.cancelClose();
+            }
+          }
+        } else {
+          clearDirty();
+          window.electron.canClose();
+        }
+      } else {
+        window.electron.canClose();
+      }
+    });
+  } else {
+    if (fileOpenInput) {
+      fileOpenInput.addEventListener("change", () => {
+        const file = fileOpenInput.files?.[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = () => {
+          try {
+            const text = String(reader.result || "");
+            const data = parseYAML(text);
+            loadDiagram(data);
+            setCurrentFilePath(file.name);
+            if (statusEl) statusEl.textContent = `Loaded: ${file.name}`;
+          } catch (error) {
+            if (statusEl) statusEl.textContent = `Load error: ${error?.message || error}`;
+          }
+        };
+        reader.readAsText(file);
+        fileOpenInput.value = "";
+      });
     }
-  });
+  }
+
+  if (fileSaveAsBtn) {
+    fileSaveAsBtn.addEventListener("click", () => {
+      const yaml = toYAML(serializeDiagram(state));
+      const blob = new Blob([yaml], { type: "text/yaml" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `${sanitizeFilename(state.diagramName)}.yaml`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+      if (statusEl) statusEl.textContent = "Saved diagram";
+    });
+  }
   
   window.addEventListener('keydown', (e) => {
     if (e.ctrlKey && e.shiftKey && e.key === 'E') {
@@ -330,6 +438,34 @@ function init() {
       }
     }
   });
+  
+  const menuTrigger = document.querySelector(".menu-trigger");
+  const menu = document.querySelector(".menu");
+  
+  if (menuTrigger && menu) {
+    menuTrigger.addEventListener("click", (e) => {
+      e.stopPropagation();
+      menu.classList.toggle("active");
+    });
+    
+    document.addEventListener("click", () => {
+      menu.classList.remove("active");
+    });
+    
+    menu.addEventListener("click", (e) => {
+      e.stopPropagation();
+    });
+  }
+  
+  initEventListeners();
 }
 
-document.addEventListener('DOMContentLoaded', init);
+function initVSCodeUI() {
+  init();
+  initSidebarUI();
+  initZoomButtons();
+  initWindowControls();
+  initModals();
+}
+
+document.addEventListener('DOMContentLoaded', initVSCodeUI);

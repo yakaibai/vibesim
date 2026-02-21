@@ -8,16 +8,15 @@
 - There is no dedicated tests or assets directory yet; keep new assets in a top-level `assets/` folder if you add them.
 
 ## Build, Test, and Development Commands
-- Run locally with a static server (recommended for proper asset loading):
-  - `python -m http.server 8000` (then open `http://localhost:8000`).
-- Quick preview (no server): open `index.html` directly in a browser, but some browsers restrict features when loaded from `file://`.
-- No build step is required; this is a plain HTML/CSS/JS project.
+- After modiying the code, build the project by running `npm run build`.
+- We just need unpacked version of the exe file, no need to install it.
 
 ## Coding Style & Naming Conventions
 - Indentation: 2 spaces in HTML/CSS/JS.
 - JavaScript: prefer `const`/`let`, avoid semicolons only if you keep it consistent (current code uses semicolons).
 - Naming: camelCase for functions/variables (`createBlock`), kebab-case for CSS classes (`scope-canvas`).
 - Keep UI strings and block labels short and user-facing.
+- Limit lines of a file to 1500 or less.
 
 ## Testing Guidelines
 - Lightweight tests live in `tests/`.

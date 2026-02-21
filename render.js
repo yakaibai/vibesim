@@ -1985,10 +1985,14 @@ export function createRenderer({
     }
     if (state.selectedConnections) state.selectedConnections.clear();
     state.blocks.forEach((block) => {
-      block.group.classList.toggle("selected", block.id === blockId);
+      if (block && block.group) {
+        block.group.classList.toggle("selected", block.id === blockId);
+      }
     });
     state.connections.forEach((conn) => {
-      conn.path.classList.toggle("selected", false);
+      if (conn && conn.path) {
+        conn.path.classList.toggle("selected", false);
+      }
     });
     onSelectBlock(blockId ? state.blocks.get(blockId) : null);
     updatePortVisibility();
@@ -2005,10 +2009,14 @@ export function createRenderer({
     }
     if (state.selectedIds) state.selectedIds.clear();
     state.blocks.forEach((block) => {
-      block.group.classList.toggle("selected", false);
+      if (block && block.group) {
+        block.group.classList.toggle("selected", false);
+      }
     });
     state.connections.forEach((c) => {
-      c.path.classList.toggle("selected", c === conn);
+      if (c && c.path) {
+        c.path.classList.toggle("selected", c === conn);
+      }
     });
     if (!conn) {
       onSelectConnection(null);
