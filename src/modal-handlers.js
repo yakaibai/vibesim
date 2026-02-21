@@ -1,13 +1,13 @@
 import { state } from './state.js';
 import { serializeDiagram, toYAML, sanitizeFilename } from './file-operations.js';
 
-let statusEl = null;
 let diagramNameInput = null;
 let runtimeInput = null;
 let simDt = null;
 let autoRouteInput = null;
 let variablesInput = null;
 let variablesPreview = null;
+let statusEl = null;
 
 export function setStatusEl(el) {
   statusEl = el;

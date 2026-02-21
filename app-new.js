@@ -1,7 +1,7 @@
 import { state, markDirty, clearDirty, signalDiagramChanged } from './src/state.js';
 import { toYAML, serializeDiagram, parseYAML, sanitizeFilename } from './src/file-operations.js';
 import { showConfirmSaveModal, handleSaveAsSubsystem, setStatusEl, setDiagramNameInput, setRuntimeInput, setSimDt, setAutoRouteInput, setVariablesInput, setVariablesPreview } from './src/modal-handlers.js';
-import { handleMenuAction, setStatusEl, setFileOpenInput, setDeleteSelectionBtn, setHomeBtn, setZoomInBtn, setZoomOutBtn, performOpen, newDiagram } from './src/menu-handlers.js';
+import { handleMenuAction, setFileOpenInput, setDeleteSelectionBtn, setHomeBtn, setZoomInBtn, setZoomOutBtn, performOpen, newDiagram } from './src/menu-handlers.js';
 import { createRenderer } from "./render.js";
 import { blockLibrary, buildBlockTemplates } from "./blocks/index.js";
 import { diagramToFRD, stabilityMargins } from "./control/margins.js";
