@@ -493,3 +493,33 @@ export const resolveArray = (value, variables, options) => {
   }
   return [];
 };
+
+export const normalizeVarName = (name) => {
+  if (!name) return "";
+  const trimmed = String(name).trim();
+  if (trimmed.startsWith("\\")) return trimmed.slice(1);
+  return trimmed;
+};
+
+export const parseVariables = (text) => {
+  const vars = { pi: Math.PI, e: Math.E };
+  const display = [];
+  const lines = String(text || "").split(/\r?\n/);
+  lines.forEach((line) => {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith("#")) return;
+    const idx = trimmed.indexOf("=");
+    if (idx < 0) return;
+    const name = trimmed.slice(0, idx).trim();
+    const expr = trimmed.slice(idx + 1).trim();
+    if (!name) return;
+    const key = normalizeVarName(name);
+    if (!key) return;
+    const value = evalExpression(expr, vars);
+    if (Number.isFinite(value)) {
+      vars[key] = value;
+      display.push(`${name}=${value}`);
+    }
+  });
+  return { vars, display };
+};
