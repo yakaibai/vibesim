@@ -7,6 +7,8 @@ import { blockLibrary, buildBlockTemplates } from "./blocks/index.js";
 import { diagramToFRD } from "./control/diagram.js";
 import { stabilityMargins } from "./control/margins.js";
 import { parseVariables } from "./utils/expr.js";
+import { createInspector } from "./blocks/inspector.js";
+import { simulate, renderScope } from "./sim.js";
 
 let svg = null;
 let blockLayer = null;
@@ -37,11 +39,72 @@ let homeBtn = null;
 let zoomInBtn = null;
 let zoomOutBtn = null;
 let printBtn = null;
+let renderInspector = () => {};
+let inspectorBody = null;
 const GRID_SIZE = 20;
+
+let statusBarInfo = null;
+let statusBarTime = null;
+let statusBarZoom = null;
+let statusBarBlocks = null;
+let statusBarConnections = null;
+
+const updateSubsystemNavUi = () => {
+  if (!subsystemUpBtn) return;
+  const isRoot = state.subsystemStack.length === 0;
+  subsystemUpBtn.hidden = isRoot;
+  subsystemUpBtn.setAttribute("aria-hidden", String(isRoot));
+  document.body.classList.toggle("is-root-diagram", isRoot);
+};
+
+const updateStatusBar = (info, time, zoom) => {
+  if (statusBarInfo && info) statusBarInfo.textContent = info;
+  if (statusBarTime && time !== undefined && time !== null) statusBarTime.textContent = `${time.toFixed(2)}s`;
+  if (statusBarZoom && zoom !== undefined && zoom !== null) statusBarZoom.textContent = `${Math.round(zoom * 100)}%`;
+  if (statusBarBlocks) statusBarBlocks.textContent = `${state.blocks.size} blocks`;
+  if (statusBarConnections) statusBarConnections.textContent = `${state.connections.length} connections`;
+};
+
+const focusPropertiesPanel = () => {
+  if (!window.matchMedia("(max-width: 900px)").matches) return;
+  const carousel = document.querySelector(".panel-carousel");
+  const inspector = document.getElementById("inspector");
+  if (!carousel || !inspector) return;
+  carousel.scrollTo({ left: inspector.offsetLeft, behavior: "smooth" });
+};
 
 function init() {
   svg = document.getElementById("svgCanvas");
+  blockLayer = document.getElementById("blockLayer");
+  wireLayer = document.getElementById("wireLayer");
+  overlayLayer = document.getElementById("overlayLayer");
   blockLibraryGroups = document.getElementById("blockLibraryGroups");
+  statusBarInfo = document.getElementById("statusBarInfo");
+  statusBarTime = document.getElementById("statusBarTime");
+  statusBarZoom = document.getElementById("statusBarZoom");
+  statusBarBlocks = document.getElementById("statusBarBlocks");
+  statusBarConnections = document.getElementById("statusBarConnections");
+  subsystemUpBtn = document.getElementById("subsystemUp");
+  marginLoopSelect = document.getElementById("marginLoopSelect");
+  marginOutputText = document.getElementById("marginOutputText");
+  fileOpenInput = document.getElementById("fileOpenInput");
+  fileSaveAsBtn = document.getElementById("fileSaveAs");
+  loadSubsystemInput = document.getElementById("loadSubsystemInput");
+  loadInput = document.getElementById("loadInput");
+  deleteSelectionBtn = document.getElementById("deleteSelection");
+  rotateSelectionBtn = document.getElementById("rotateSelection");
+  homeBtn = document.getElementById("home");
+  zoomInBtn = document.getElementById("zoomIn");
+  zoomOutBtn = document.getElementById("zoomOut");
+  printBtn = document.getElementById("print");
+  statusEl = document.getElementById("status");
+  diagramNameInput = document.getElementById("diagramName");
+  runtimeInput = document.getElementById("runtime");
+  simDt = document.getElementById("simDt");
+  autoRouteInput = document.getElementById("autoRoute");
+  variablesInput = document.getElementById("variablesInput");
+  variablesPreview = document.getElementById("variablesPreview");
+  inspectorBody = document.getElementById("inspectorBody");
   
   console.log('init() - svg:', svg);
   console.log('init() - blockLibraryGroups:', blockLibraryGroups);
@@ -72,6 +135,27 @@ function init() {
     });
     rendererRef.current = renderer;
     console.log('init() - renderer initialized');
+  }
+  
+  renderInspector = createInspector({
+    inspectorBody,
+    rotateSelectionBtn,
+    renderer: rendererRef,
+    renderScope,
+    signalDiagramChanged,
+    onOpenSubsystem: (block) => openSubsystemFromBlock(block),
+    getRuntimeSeconds: () => {
+      const value = Number(runtimeInput?.value);
+      return Number.isFinite(value) ? value : null;
+    },
+  }).renderInspector;
+  
+  if (inspectorBody) {
+    inspectorBody.addEventListener("input", (event) => {
+      const target = event.target;
+      if (!(target instanceof HTMLElement)) return;
+      if (target.dataset.edit !== "expr") return;
+    });
   }
   
   if (blockLibraryGroups) {
