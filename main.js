@@ -148,6 +148,27 @@ ipcMain.handle('save-file-as', async (event, { content, defaultName }) => {
   return { success: false, canceled: true };
 });
 
+ipcMain.handle('save-subsystem-as', async (event, { content, defaultName }) => {
+  const result = await dialog.showSaveDialog(mainWindow, {
+    defaultPath: defaultName,
+    filters: [
+      { name: 'Subsystem Files', extensions: ['mos'] },
+      { name: 'All Files', extensions: ['*'] }
+    ]
+  });
+
+  if (!result.canceled && result.filePath) {
+    try {
+      fs.writeFileSync(result.filePath, content, 'utf-8');
+      return { success: true, filePath: result.filePath };
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  }
+  
+  return { success: false, canceled: true };
+});
+
 ipcMain.on('window-minimize', () => {
   if (mainWindow) {
     mainWindow.minimize();

@@ -45,6 +45,9 @@
               <span>Save As...</span>
               <span class="shortcut">Ctrl+Shift+S</span>
             </div>
+            <div class="menubar-item" data-action="saveAsSubsystem">
+              <span>Save as Subsystem...</span>
+            </div>
             <div class="menubar-divider"></div>
             <div class="menubar-item" data-action="exit">
               <span>Exit</span>
@@ -355,8 +358,43 @@
   </div>
 
   <input id="fileOpenInput" type="file" accept=".yaml,.yml,.txt,text/yaml,text/plain,application/x-yaml,application/yaml,*/*" hidden>
-  <input id="loadSubsystemInput" type="file" accept=".yaml,.yml,.txt,text/yaml,text/plain,application/x-yaml,application/yaml,*/*" hidden>
+  <input id="loadSubsystemInput" type="file" accept=".mos" hidden>
   <input id="loadInput" type="file" accept=".yaml,.yml,.txt,text/yaml,text/plain,application/x-yaml,application/yaml,*/*" hidden>
+  
+  <div class="modal" id="confirmSaveModal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3>Save Changes?</h3>
+        <button class="modal-close" id="closeConfirmSaveModal">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p>Do you want to save your changes before proceeding?</p>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" id="dontSaveConfirm">Don't Save</button>
+        <button class="btn btn-primary" id="saveConfirm">Save</button>
+      </div>
+    </div>
+  </div>
+  
+  <div class="modal" id="subsystemNameModal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3>Save as Subsystem</h3>
+        <button class="modal-close" id="closeSubsystemNameModal">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label for="subsystemNameInput">Model Name</label>
+          <input id="subsystemNameInput" type="text" class="input" placeholder="My Subsystem">
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" id="cancelSubsystemName">Cancel</button>
+        <button class="btn btn-primary" id="confirmSubsystemName">Save</button>
+      </div>
+    </div>
+  </div>
 
   <div class="modal" id="aboutModal">
     <div class="modal-content about-modal">

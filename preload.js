@@ -15,6 +15,7 @@ contextBridge.exposeInMainWorld(
     openFile: () => ipcRenderer.invoke('open-file'),
     saveFile: (content, filePath) => ipcRenderer.invoke('save-file', { content, filePath }),
     saveFileAs: (content, defaultName) => ipcRenderer.invoke('save-file-as', { content, defaultName }),
+    saveSubsystemAs: (content, defaultName) => ipcRenderer.invoke('save-subsystem-as', { content, defaultName }),
     
     // Event listeners
     onFileOpened: (callback) => ipcRenderer.on('file-opened', (event, data) => callback(data)),

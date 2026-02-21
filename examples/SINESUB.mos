@@ -1,0 +1,34 @@
+version: 1
+name: SINESUB
+blocks:
+  -
+    id: b1
+    type: sine
+    x: 1810
+    y: 1200
+    rotation: 0
+    params:
+      amp: 1
+      freq: 1
+      phase: 0
+  -
+    id: b2
+    type: labelSink
+    x: 1980
+    y: 1480
+    rotation: 0
+    params:
+      name: x
+      showNode: true
+      isExternalPort: true
+connections:
+  -
+    from: b1
+    to: b2
+    fromIndex: 0
+    toIndex: 0
+    points: [[1890,1240],[1940,1240],[1940,1500],[1980,1500]]
+variables: ""
+sampleTime: 0.01
+runtime: 10
+autoRoute: true

@@ -7,6 +7,7 @@ export const createInspector = ({
   onOpenSubsystem,
   getRuntimeSeconds,
 }) => {
+  const getRenderer = () => renderer?.current || renderer;
   const parseList = (value) =>
     value
       .split(",")
@@ -56,11 +57,11 @@ export const createInspector = ({
       if (!input.dataset.paramVisibilityBound) {
         input.dataset.paramVisibilityBound = "true";
         input.addEventListener("input", () => {
-          renderer.updateBlockLabel(block);
+          if (block) getRenderer().updateBlockLabel(block);
         });
         if (input.type === "checkbox") {
           input.addEventListener("change", () => {
-            renderer.updateBlockLabel(block);
+            if (block) getRenderer().updateBlockLabel(block);
           });
         }
       }
@@ -78,7 +79,7 @@ export const createInspector = ({
           if (target.closest("input, select, textarea, button, a")) return;
           block.params._visible[key] = !block.params._visible[key];
           updateState();
-          renderer.updateBlockLabel(block);
+          if (block) getRenderer().updateBlockLabel(block);
         });
       }
     });
@@ -142,7 +143,7 @@ export const createInspector = ({
       const input = inspectorBody.querySelector("input[data-edit='value']");
       input.addEventListener("input", () => {
         block.params.value = input.value;
-        renderer.updateBlockLabel(block);
+        getRenderer().updateBlockLabel(block);
       });
     } else if (block.type === "step") {
       inspectorBody.innerHTML = `
@@ -153,7 +154,7 @@ export const createInspector = ({
       const input = inspectorBody.querySelector("input[data-edit='stepTime']");
       input.addEventListener("input", () => {
         block.params.stepTime = input.value;
-        renderer.updateBlockLabel(block);
+        getRenderer().updateBlockLabel(block);
       });
     } else if (block.type === "ramp") {
       inspectorBody.innerHTML = `
@@ -168,11 +169,11 @@ export const createInspector = ({
       const startInput = inspectorBody.querySelector("input[data-edit='start']");
       slopeInput.addEventListener("input", () => {
         block.params.slope = slopeInput.value;
-        renderer.updateBlockLabel(block);
+        getRenderer().updateBlockLabel(block);
       });
       startInput.addEventListener("input", () => {
         block.params.start = startInput.value;
-        renderer.updateBlockLabel(block);
+        getRenderer().updateBlockLabel(block);
       });
     } else if (block.type === "impulse") {
       inspectorBody.innerHTML = `
@@ -187,11 +188,11 @@ export const createInspector = ({
       const ampInput = inspectorBody.querySelector("input[data-edit='amp']");
       timeInput.addEventListener("input", () => {
         block.params.time = timeInput.value;
-        renderer.updateBlockLabel(block);
+        getRenderer().updateBlockLabel(block);
       });
       ampInput.addEventListener("input", () => {
         block.params.amp = ampInput.value;
-        renderer.updateBlockLabel(block);
+        getRenderer().updateBlockLabel(block);
       });
     } else if (block.type === "sine") {
       inspectorBody.innerHTML = `
@@ -210,15 +211,15 @@ export const createInspector = ({
       const phaseInput = inspectorBody.querySelector("input[data-edit='phase']");
       ampInput.addEventListener("input", () => {
         block.params.amp = ampInput.value;
-        renderer.updateBlockLabel(block);
+        getRenderer().updateBlockLabel(block);
       });
       freqInput.addEventListener("input", () => {
         block.params.freq = freqInput.value;
-        renderer.updateBlockLabel(block);
+        getRenderer().updateBlockLabel(block);
       });
       phaseInput.addEventListener("input", () => {
         block.params.phase = phaseInput.value;
-        renderer.updateBlockLabel(block);
+        getRenderer().updateBlockLabel(block);
       });
     } else if (block.type === "scope") {
       const limits = block.computedLimits || {};
@@ -258,7 +259,7 @@ export const createInspector = ({
         input.addEventListener("change", () => {
           const widthValue = Number(inspectorBody.querySelector("[data-edit='width']")?.value);
           const heightValue = Number(inspectorBody.querySelector("[data-edit='height']")?.value);
-          renderer.resizeBlock(block, widthValue, heightValue);
+          getRenderer().resizeBlock(block, widthValue, heightValue);
           input.value = key === "width" ? block.width : block.height;
         });
       });
@@ -306,7 +307,7 @@ export const createInspector = ({
         input.addEventListener("change", () => {
           const widthValue = Number(inspectorBody.querySelector("[data-edit='width']")?.value);
           const heightValue = Number(inspectorBody.querySelector("[data-edit='height']")?.value);
-          renderer.resizeBlock(block, widthValue, heightValue);
+          getRenderer().resizeBlock(block, widthValue, heightValue);
           input.value = key === "width" ? block.width : block.height;
         });
       });
@@ -338,19 +339,19 @@ export const createInspector = ({
       const t1Input = inspectorBody.querySelector("input[data-edit='t1']");
       ampInput.addEventListener("input", () => {
         block.params.amp = ampInput.value;
-        renderer.updateBlockLabel(block);
+        getRenderer().updateBlockLabel(block);
       });
       f0Input.addEventListener("input", () => {
         block.params.f0 = f0Input.value;
-        renderer.updateBlockLabel(block);
+        getRenderer().updateBlockLabel(block);
       });
       f1Input.addEventListener("input", () => {
         block.params.f1 = f1Input.value;
-        renderer.updateBlockLabel(block);
+        getRenderer().updateBlockLabel(block);
       });
       t1Input.addEventListener("input", () => {
         block.params.t1 = t1Input.value;
-        renderer.updateBlockLabel(block);
+        getRenderer().updateBlockLabel(block);
       });
     } else if (block.type === "noise") {
       inspectorBody.innerHTML = `
@@ -361,7 +362,7 @@ export const createInspector = ({
       const ampInput = inspectorBody.querySelector("input[data-edit='amp']");
       ampInput.addEventListener("input", () => {
         block.params.amp = ampInput.value;
-        renderer.updateBlockLabel(block);
+        getRenderer().updateBlockLabel(block);
       });
     } else if (block.type === "integrator") {
       inspectorBody.innerHTML = `
@@ -396,7 +397,7 @@ export const createInspector = ({
       const exprInput = inspectorBody.querySelector("input[data-edit='expr']");
       exprInput.addEventListener("input", () => {
         block.params.expr = exprInput.value;
-        renderer.updateBlockLabel(block);
+        getRenderer().updateBlockLabel(block);
       });
     } else if (block.type === "labelSource" || block.type === "labelSink") {
       inspectorBody.innerHTML = `
@@ -409,20 +410,20 @@ export const createInspector = ({
       const nameInput = inspectorBody.querySelector("input[data-edit='name']");
       nameInput.addEventListener("input", () => {
         block.params.name = nameInput.value.trim();
-        renderer.updateBlockLabel(block);
+        getRenderer().updateBlockLabel(block);
       });
       const isExternalPortInput = inspectorBody.querySelector("input[data-edit='isExternalPort']");
       if (isExternalPortInput) {
         isExternalPortInput.addEventListener("change", () => {
           block.params.isExternalPort = isExternalPortInput.checked;
-          renderer.updateBlockLabel(block);
+          getRenderer().updateBlockLabel(block);
         });
       }
       const showNodeInput = inspectorBody.querySelector("input[data-edit='showNode']");
       if (showNodeInput) {
         showNodeInput.addEventListener("change", () => {
           block.params.showNode = showNodeInput.checked;
-          renderer.updateBlockLabel(block);
+          getRenderer().updateBlockLabel(block);
         });
       }
     } else if (block.type === "delay") {
@@ -434,7 +435,7 @@ export const createInspector = ({
       const input = inspectorBody.querySelector("input[data-edit='delay']");
       input.addEventListener("input", () => {
         block.params.delay = input.value;
-        renderer.updateBlockLabel(block);
+        getRenderer().updateBlockLabel(block);
       });
     } else if (block.type === "stateSpace") {
       inspectorBody.innerHTML = `
@@ -478,7 +479,7 @@ export const createInspector = ({
       const fileInput = inspectorBody.querySelector("input[data-edit='file']");
       pathInput.addEventListener("input", () => {
         block.params.path = pathInput.value;
-        renderer.updateBlockLabel(block);
+        getRenderer().updateBlockLabel(block);
       });
       fileInput.addEventListener("change", () => {
         const file = fileInput.files?.[0];
@@ -512,7 +513,7 @@ export const createInspector = ({
           block.params.times = pairs.map((p) => p.t);
           block.params.values = pairs.map((p) => p.v);
           block.params.loaded = pairs.length > 0;
-          renderer.updateBlockLabel(block);
+          getRenderer().updateBlockLabel(block);
           renderInspector(block);
         };
         reader.readAsText(file);
@@ -526,7 +527,7 @@ export const createInspector = ({
       const input = inspectorBody.querySelector("input[data-edit='gain']");
       input.addEventListener("input", () => {
         block.params.gain = input.value;
-        renderer.updateBlockLabel(block);
+        getRenderer().updateBlockLabel(block);
       });
     } else if (block.type === "sum") {
       const signs = block.params.signs || [1, 1, 1];
@@ -560,7 +561,7 @@ export const createInspector = ({
             Number(inspectorBody.querySelector("select[data-edit='sign1']")?.value) || 1,
             Number(inspectorBody.querySelector("select[data-edit='sign2']")?.value) || 1,
           ];
-          renderer.updateBlockLabel(block);
+          getRenderer().updateBlockLabel(block);
           signalDiagramChanged();
         });
       });
@@ -584,7 +585,7 @@ export const createInspector = ({
       const update = () => {
         block.params.condition = conditionInput.value;
         block.params.threshold = thresholdInput.value;
-        renderer.updateBlockLabel(block);
+        getRenderer().updateBlockLabel(block);
       };
       conditionInput.addEventListener("change", update);
       thresholdInput.addEventListener("input", update);
@@ -602,13 +603,13 @@ export const createInspector = ({
         commentTextInput.value = String(block.params.commentText ?? "");
         commentTextInput.addEventListener("input", () => {
           block.params.commentText = commentTextInput.value;
-          renderer.updateBlockLabel(block);
+          getRenderer().updateBlockLabel(block);
         });
       }
       if (showBorderInput) {
         showBorderInput.addEventListener("change", () => {
           block.params.showBorder = showBorderInput.checked;
-          renderer.updateBlockLabel(block);
+          getRenderer().updateBlockLabel(block);
         });
       }
     } else if (block.type === "saturation") {
@@ -625,7 +626,7 @@ export const createInspector = ({
       const update = () => {
         block.params.min = minInput.value;
         block.params.max = maxInput.value;
-        renderer.updateBlockLabel(block);
+        getRenderer().updateBlockLabel(block);
       };
       minInput.addEventListener("input", update);
       maxInput.addEventListener("input", update);
@@ -642,11 +643,11 @@ export const createInspector = ({
       const fallInput = inspectorBody.querySelector("input[data-edit='fall']");
       riseInput.addEventListener("input", () => {
         block.params.rise = riseInput.value;
-        renderer.updateBlockLabel(block);
+        getRenderer().updateBlockLabel(block);
       });
       fallInput.addEventListener("input", () => {
         block.params.fall = fallInput.value;
-        renderer.updateBlockLabel(block);
+        getRenderer().updateBlockLabel(block);
       });
     } else if (block.type === "backlash") {
       inspectorBody.innerHTML = `
@@ -657,7 +658,7 @@ export const createInspector = ({
       const widthInput = inspectorBody.querySelector("input[data-edit='width']");
       widthInput.addEventListener("input", () => {
         block.params.width = widthInput.value;
-        renderer.updateBlockLabel(block);
+        getRenderer().updateBlockLabel(block);
       });
     } else if (block.type === "tf") {
       inspectorBody.innerHTML = `
@@ -672,12 +673,12 @@ export const createInspector = ({
       const denInput = inspectorBody.querySelector("input[data-edit='den']");
       numInput.addEventListener("input", () => {
         block.params.num = parseList(numInput.value);
-        renderer.updateBlockLabel(block);
+        getRenderer().updateBlockLabel(block);
         signalDiagramChanged();
       });
       denInput.addEventListener("input", () => {
         block.params.den = parseList(denInput.value);
-        renderer.updateBlockLabel(block);
+        getRenderer().updateBlockLabel(block);
         signalDiagramChanged();
       });
     } else if (block.type === "dtf") {
@@ -699,7 +700,7 @@ export const createInspector = ({
         block.params.num = parseList(numInput.value);
         block.params.den = parseList(denInput.value);
         block.params.ts = tsInput.value;
-        renderer.updateBlockLabel(block);
+        getRenderer().updateBlockLabel(block);
         signalDiagramChanged();
       };
       numInput.addEventListener("input", update);
@@ -719,7 +720,7 @@ export const createInspector = ({
       const update = () => {
         block.params.steps = stepsInput.value;
         block.params.ts = tsInput.value;
-        renderer.updateBlockLabel(block);
+        getRenderer().updateBlockLabel(block);
         signalDiagramChanged();
       };
       stepsInput.addEventListener("input", update);
@@ -733,7 +734,7 @@ export const createInspector = ({
       const tsInput = inspectorBody.querySelector("input[data-edit='ts']");
       tsInput.addEventListener("input", () => {
         block.params.ts = tsInput.value;
-        renderer.updateBlockLabel(block);
+        getRenderer().updateBlockLabel(block);
         signalDiagramChanged();
       });
     } else if (block.type === "dstateSpace") {
@@ -778,7 +779,7 @@ export const createInspector = ({
       const input = inspectorBody.querySelector("input[data-edit='cutoff']");
       input.addEventListener("input", () => {
         block.params.cutoff = input.value;
-        renderer.updateBlockLabel(block);
+        getRenderer().updateBlockLabel(block);
       });
     } else if (block.type === "derivative") {
       inspectorBody.innerHTML = `<div class="param">d/dt</div>`;
@@ -811,7 +812,7 @@ export const createInspector = ({
         block.params.kd = kdInput.value;
         block.params.min = minInput.value;
         block.params.max = maxInput.value;
-        renderer.updateBlockLabel(block);
+        getRenderer().updateBlockLabel(block);
       };
       kpInput.addEventListener("input", update);
       kiInput.addEventListener("input", update);
@@ -827,7 +828,7 @@ export const createInspector = ({
       const input = inspectorBody.querySelector("input[data-edit='path']");
       input.addEventListener("input", () => {
         block.params.path = input.value;
-        renderer.updateBlockLabel(block);
+        getRenderer().updateBlockLabel(block);
       });
     } else if (block.type === "subsystem") {
       const inputCount = Array.isArray(block.params.externalInputs) ? block.params.externalInputs.length : 0;
@@ -844,7 +845,7 @@ export const createInspector = ({
       if (nameInput) {
         nameInput.addEventListener("input", () => {
           block.params.name = nameInput.value.trim();
-          renderer.updateBlockLabel(block);
+          getRenderer().updateBlockLabel(block);
         });
       }
       const openBtn = inspectorBody.querySelector("button[data-action='open-subsystem']");

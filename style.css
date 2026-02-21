@@ -1026,6 +1026,13 @@ body {
   color: var(--vscode-foreground);
 }
 
+.modal-header h3 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--vscode-foreground);
+}
+
 .modal-close {
   background: none;
   border: none;
@@ -2065,6 +2072,34 @@ select option {
 
 .control-group {
   margin-bottom: 12px;
+}
+
+.form-group {
+  margin-bottom: 16px;
+}
+
+.form-group label {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--vscode-foreground);
+}
+
+.form-group .input {
+  width: 100%;
+  padding: 8px 10px;
+  background-color: var(--vscode-input-background);
+  border: 1px solid var(--vscode-input-border);
+  border-radius: 3px;
+  color: var(--vscode-input-foreground);
+  font-size: 14px;
+  outline: none;
+  transition: border-color 0.15s ease;
+}
+
+.form-group .input:focus {
+  border-color: var(--vscode-list-focus-outline);
 }
 
 .control-group label {

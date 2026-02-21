@@ -1,0 +1,63 @@
+version: 1
+name: vibesim
+blocks:
+  -
+    id: b1
+    type: integrator
+    x: 1860
+    y: 1180
+    rotation: 0
+    params:
+      initial: 0
+      min: -inf
+      max: inf
+  -
+    id: b2
+    type: delay
+    x: 1790
+    y: 1350
+    rotation: 0
+    params:
+      delay: 0.1
+  -
+    id: b3
+    type: labelSource
+    x: 1760
+    y: 1450
+    rotation: 0
+    params:
+      name: x
+      isExternalPort: true
+  -
+    id: b4
+    type: labelSink
+    x: 2040
+    y: 1360
+    rotation: 0
+    params:
+      name: x
+      showNode: true
+      isExternalPort: true
+connections:
+  -
+    from: b2
+    to: b1
+    fromIndex: 0
+    toIndex: 0
+    points: [[1870,1390],[1900,1390],[1900,1290],[1820,1290],[1820,1220],[1860,1220]]
+  -
+    from: b3
+    to: b2
+    fromIndex: 0
+    toIndex: 0
+    points: [[1800,1470],[1830,1470],[1830,1520],[1730,1520],[1730,1390],[1790,1390]]
+  -
+    from: b1
+    to: b4
+    fromIndex: 0
+    toIndex: 0
+    points: [[1940,1220],[2000,1220],[2000,1380],[2040,1380]]
+variables: ""
+sampleTime: 0.01
+runtime: 10
+autoRoute: true
