@@ -11,6 +11,10 @@ import { stabilityMargins } from "./control/margins.js";
 import { parseVariables } from "./utils/expr.js";
 import { createInspector } from "./blocks/inspector.js";
 import { simulate, renderScope } from "./sim.js";
+import { setupGlobalErrorHandlers, createErrorLogButton, showErrorLogInConsole, getLatestErrors } from "./browser-error-logger.js";
+
+setupGlobalErrorHandlers();
+createErrorLogButton();
 
 let svg = null;
 let blockLayer = null;
@@ -299,6 +303,31 @@ function init() {
     if (state.dirty) {
       e.preventDefault();
       e.returnValue = '';
+    }
+  });
+  
+  window.addEventListener('keydown', (e) => {
+    if (e.ctrlKey && e.shiftKey && e.key === 'E') {
+      e.preventDefault();
+      showErrorLogInConsole();
+      const logs = getLatestErrors(1);
+      if (logs.length > 0) {
+        const entry = logs[0];
+        const errorText = `${entry.error}\n${entry.filename ? `File: ${entry.filename}:${entry.lineno}:${entry.colno}` : ''}`;
+        navigator.clipboard.writeText(errorText).then(() => {
+          if (statusEl) statusEl.textContent = 'Latest error copied to clipboard!';
+          setTimeout(() => {
+            if (statusEl) statusEl.textContent = '';
+          }, 3000);
+        }).catch(err => {
+          console.error('Failed to copy:', err);
+        });
+      } else {
+        if (statusEl) statusEl.textContent = 'No errors logged';
+        setTimeout(() => {
+          if (statusEl) statusEl.textContent = '';
+        }, 3000);
+      }
     }
   });
 }
