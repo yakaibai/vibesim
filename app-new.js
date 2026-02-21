@@ -2,6 +2,8 @@ import { state, markDirty, clearDirty, signalDiagramChanged } from './src/state.
 import { toYAML, serializeDiagram, parseYAML, sanitizeFilename } from './src/file-operations.js';
 import { showConfirmSaveModal, handleSaveAsSubsystem, setStatusEl, setDiagramNameInput, setRuntimeInput, setSimDt, setAutoRouteInput, setVariablesInput, setVariablesPreview } from './src/modal-handlers.js';
 import { handleMenuAction, setFileOpenInput, setDeleteSelectionBtn, setHomeBtn, setZoomInBtn, setZoomOutBtn, performOpen, newDiagram } from './src/menu-handlers.js';
+import { openSubsystemFromBlock, closeSubsystemView, loadDiagram, setSubsystemUpBtn, setUpdateSubsystemNavUi } from './src/diagram-handlers.js';
+import { setRendererRef, getViewBox, setViewBox, getZoomScale, setZoomScale, updateGrid, clearWorkspace } from './src/workspace-handlers.js';
 import { createRenderer } from "./render.js";
 import { blockLibrary, buildBlockTemplates } from "./blocks/index.js";
 import { diagramToFRD } from "./control/diagram.js";
@@ -16,8 +18,6 @@ let wireLayer = null;
 let overlayLayer = null;
 let renderer = null;
 let rendererRef = { current: null };
-let viewBox = { x: 0, y: 0, w: 800, h: 600 };
-let zoomScale = 1;
 let blockLibraryGroups = null;
 let statusEl = null;
 let diagramNameInput = null;
@@ -49,14 +49,6 @@ let statusBarZoom = null;
 let statusBarBlocks = null;
 let statusBarConnections = null;
 
-const updateSubsystemNavUi = () => {
-  if (!subsystemUpBtn) return;
-  const isRoot = state.subsystemStack.length === 0;
-  subsystemUpBtn.hidden = isRoot;
-  subsystemUpBtn.setAttribute("aria-hidden", String(isRoot));
-  document.body.classList.toggle("is-root-diagram", isRoot);
-};
-
 const updateStatusBar = (info, time, zoom) => {
   if (statusBarInfo && info) statusBarInfo.textContent = info;
   if (statusBarTime && time !== undefined && time !== null) statusBarTime.textContent = `${time.toFixed(2)}s`;
@@ -71,6 +63,16 @@ const focusPropertiesPanel = () => {
   const inspector = document.getElementById("inspector");
   if (!carousel || !inspector) return;
   carousel.scrollTo({ left: inspector.offsetLeft, behavior: "smooth" });
+};
+
+let updateStabilityPanel = () => {};
+
+const updateSubsystemNavUi = () => {
+  if (!subsystemUpBtn) return;
+  const isRoot = state.subsystemStack.length === 0;
+  subsystemUpBtn.hidden = isRoot;
+  subsystemUpBtn.setAttribute("aria-hidden", String(isRoot));
+  document.body.classList.toggle("is-root-diagram", isRoot);
 };
 
 function init() {
@@ -105,6 +107,10 @@ function init() {
   variablesInput = document.getElementById("variablesInput");
   variablesPreview = document.getElementById("variablesPreview");
   inspectorBody = document.getElementById("inspectorBody");
+  
+  setRendererRef(rendererRef);
+  setSubsystemUpBtn(subsystemUpBtn);
+  setUpdateSubsystemNavUi(updateSubsystemNavUi);
   
   console.log('init() - svg:', svg);
   console.log('init() - blockLibraryGroups:', blockLibraryGroups);
