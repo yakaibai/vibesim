@@ -14,55 +14,9 @@ import { simulate, renderScope } from "../sim.js";
 import { renderBlockLibrary, setBlockLibraryGroups, setBlockLibrary, setGridSize, setRendererRef as setRendererRefLibrary, setStatusEl as setStatusElLibrary } from "./block-library-handlers.js";
 import { initSidebarUI, initZoomButtons, setStatusElRef, setHomeBtnRef, setZoomInBtnRef, setZoomOutBtnRef, initWindowControls, initModals } from "./ui-handlers.js";
 import { initEventListeners, setRendererRef as setRendererRefEvent, setStatusEl as setStatusElEvent, setRuntimeInput as setRuntimeInputEvent, setInspectorBody, setRotateSelectionBtn, setMarginLoopSelect, setMarginOutputText, setRenderInspector as setRenderInspectorEvent } from "./event-handlers.js";
-
-
-let themes = [];
-
-const loadThemes = async () => {
-  try {
-    const response = await fetch('styles/themes.css');
-    const cssText = await response.text();
-    const themeRegex = /\/\*\s*Theme Name:\s*([^\*]+)\s*\*\//g;
-    const matches = [...cssText.matchAll(themeRegex)];
-    
-    themes = matches.map((match, index) => {
-      const name = match[1].trim();
-      const isDefault = index === 0;
-      return {
-        id: isDefault ? 'default' : name.toLowerCase().replace(/\s+/g, '-'),
-        name: name
-      };
-    });
-    
-    updateThemeMenu();
-    
-    if (themes.length > 0) {
-      const savedTheme = localStorage.getItem('theme');
-      if (savedTheme && themes.find(t => t.id === savedTheme)) {
-        applyTheme(savedTheme);
-      } else {
-        applyTheme(themes[0].id);
-      }
-    }
-  } catch (error) {
-    console.error('Failed to load themes:', error);
-    themes = [
-      { id: "default", name: "Default Dark" },
-      { id: "light", name: "Light" },
-      { id: "monokai", name: "Monokai" },
-      { id: "dracula", name: "Dracula" },
-      { id: "solarized", name: "Solarized Dark" },
-    ];
-    updateThemeMenu();
-    
-    const savedTheme = localStorage.getItem('theme');
-    if (savedTheme && themes.find(t => t.id === savedTheme)) {
-      applyTheme(savedTheme);
-    } else {
-      applyTheme(themes[0].id);
-    }
-  }
-};
+import { loadThemes, applyTheme, getThemes } from "./theme-manager.js";
+import { initGridManager, loadGridSettings } from "./grid-manager.js";
+import { initContextMenu, setContextMenus, setStateRef as setContextMenuStateRef, setRendererRef as setContextMenuRendererRef, setFitToDiagram as setContextMenuFitToDiagram, setRenderInspector as setContextMenuRenderInspector, setFocusPropertiesPanel as setContextMenuFocusPropertiesPanel, setSvg as setContextMenuSvg } from "./context-menu-manager.js";
 
 const updateThemeMenu = () => {
   const viewMenu = document.querySelector('[data-menu="view"]');
@@ -77,6 +31,7 @@ const updateThemeMenu = () => {
   const themeItems = dropdown.querySelectorAll('[data-action^="theme-"]');
   themeItems.forEach(item => item.remove());
   
+  const themes = getThemes();
   themes.forEach(theme => {
     const item = document.createElement('div');
     item.className = 'menubar-item';
@@ -85,20 +40,16 @@ const updateThemeMenu = () => {
     
     item.addEventListener('click', (e) => {
       e.stopPropagation();
-      handleMenuAction(`theme-${theme.id}`);
+      const action = `theme-${theme.id}`;
+      
+      const menubarDropdowns = document.querySelectorAll('.menubar-dropdown');
+      menubarDropdowns.forEach(dropdown => dropdown.style.display = 'none');
+      
+      handleMenuAction(action);
     });
     
     dropdown.appendChild(item);
   });
-};
-
-const applyTheme = (themeId) => {
-  const chosen = themes.find((theme) => theme.id === themeId) || themes[0];
-  if (chosen.id === "default") {
-    delete document.body.dataset.theme;
-  } else {
-    document.body.dataset.theme = chosen.id;
-  }
 };
 
 let svg = null;
@@ -195,7 +146,18 @@ const fitToDiagram = () => {
 };
 
 export function init() {
-  loadThemes();
+  loadThemes().then(() => {
+    updateThemeMenu();
+    const themes = getThemes();
+    if (themes.length > 0) {
+      const savedTheme = localStorage.getItem('theme');
+      if (savedTheme && themes.find(t => t.id === savedTheme)) {
+        applyTheme(savedTheme);
+      } else {
+        applyTheme(themes[0].id);
+      }
+    }
+  });
   
   svg = document.getElementById("svgCanvas");
   blockLayer = document.getElementById("blockLayer");
@@ -265,10 +227,13 @@ export function init() {
   setMarginLoopSelect(marginLoopSelect);
   setMarginOutputText(marginOutputText);
   
-  setRenderInspectorEvent(renderInspector);
-  
   setFitToDiagram(fitToDiagram);
   setUpdateStabilityPanel(updateStabilityPanel);
+  
+  setContextMenuStateRef(state);
+  setContextMenuRendererRef(rendererRef);
+  setContextMenuFitToDiagram(fitToDiagram);
+  setContextMenuSvg(svg);
   
   console.log('init() - svg:', svg);
   console.log('init() - blockLibraryGroups:', blockLibraryGroups);
@@ -315,6 +280,8 @@ export function init() {
   }).renderInspector;
   
   setRenderInspectorEvent(renderInspector);
+  setContextMenuRenderInspector(renderInspector);
+  setContextMenuFocusPropertiesPanel(focusPropertiesPanel);
   
   if (inspectorBody) {
     inspectorBody.addEventListener("input", (event) => {
@@ -495,7 +462,13 @@ export function init() {
       e.stopPropagation();
     });
   }
+
   
+  const blockContextMenu = document.getElementById('blockContextMenu');
+  const canvasContextMenu = document.getElementById('canvasContextMenu');
+  setContextMenus(blockContextMenu, canvasContextMenu);
+  
+  initGridManager();
   initEventListeners();
 }
 
@@ -504,6 +477,7 @@ function initVSCodeUI() {
   initZoomButtons();
   initWindowControls();
   initModals();
+  initContextMenu();
 }
 
 document.addEventListener('DOMContentLoaded', () => {

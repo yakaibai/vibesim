@@ -625,7 +625,7 @@ connections:
     to: b37
     fromIndex: 0
     toIndex: 0
-    points: [[2250,1830],[2320,1830],[2320,1760],[2360,1760]]
+    points: [[2250,1830],[2320,1830],[2320,1790],[2330,1790],[2330,1760],[2360,1760]]
   -
     from: b14
     to: b38
@@ -663,6 +663,6 @@ connections:
     toIndex: 0
     points: [[2310,1610],[2330,1610],[2330,1540],[2360,1540]]
 variables: ""
+runtime: 10
 sampleTime: 0.001
-runtime: 30
 autoRoute: true

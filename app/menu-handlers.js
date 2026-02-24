@@ -3,6 +3,7 @@ import { toYAML, serializeDiagram, parseYAML, sanitizeFilename } from './file-op
 import { showConfirmSaveModal, handleSaveAsSubsystem } from './modal-handlers.js';
 import { loadDiagram, updateSubsystemNavUi } from './diagram-handlers.js';
 import { clearWorkspace } from './workspace-handlers.js';
+import { applyTheme } from './theme-manager.js';
 
 let statusEl = null;
 let currentFilePath = null;
@@ -334,7 +335,7 @@ export function handleMenuAction(action) {
     default:
       if (action.startsWith('theme-')) {
         const themeId = action.replace('theme-', '');
-        document.documentElement.setAttribute('data-theme', themeId);
+        applyTheme(themeId);
         localStorage.setItem('theme', themeId);
       }
       break;

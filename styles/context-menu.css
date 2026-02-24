@@ -1,0 +1,48 @@
+/* Context menu styles */
+
+.context-menu {
+  position: fixed;
+  min-width: 200px;
+  background-color: var(--vscode-widget-background);
+  border: 1px solid var(--vscode-widget-border);
+  box-shadow: var(--vscode-widget-shadow);
+  display: none;
+  z-index: 1002;
+  padding: 4px 0;
+  border-radius: 4px;
+}
+
+.context-menu.show {
+  display: block;
+}
+
+.context-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 16px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background-color 0.15s ease;
+  color: var(--vscode-foreground);
+}
+
+.context-menu-item:hover {
+  background-color: var(--vscode-list-active-background);
+}
+
+.context-menu-item svg {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+}
+
+.context-menu-item span {
+  flex: 1;
+}
+
+.context-menu-divider {
+  height: 1px;
+  background-color: var(--vscode-widget-border);
+  margin: 4px 0;
+}

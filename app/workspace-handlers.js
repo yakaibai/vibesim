@@ -1,5 +1,6 @@
 import { state } from './state.js';
 import { sanitizeFilename } from './file-operations.js';
+import { getGridSize } from './grid-manager.js';
 
 let rendererRef = null;
 let viewBox = { x: 0, y: 0, w: 0, h: 0 };
@@ -54,7 +55,8 @@ export function setZoomScale(newScale) {
 
 export function updateGrid(canvas, scale, viewbox) {
   if (!canvas) return;
-  const gridPx = 10 * scale;
+  const userGridSize = getGridSize();
+  const gridPx = userGridSize * scale;
   const mod = (value, modValue) => ((value % modValue) + modValue) % modValue;
   const offsetX = -mod(viewbox.x * scale, gridPx);
   const offsetY = -mod(viewbox.y * scale, gridPx);

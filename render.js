@@ -3268,8 +3268,11 @@ export function createRenderer({
     const angle = block.rotation || 0;
     const cx = block.width / 2;
     const cy = block.height / 2;
-    block.group.setAttribute("transform", `translate(${block.x}, ${block.y}) rotate(${angle} ${cx} ${cy})`);
+    const scaleX = block.mirrored ? -1 : 1;
+    // 先移动到模块中心，然后缩放，再移回原位，确保以中轴线为对称轴
+    block.group.setAttribute("transform", `translate(${block.x}, ${block.y}) translate(${cx}, ${cy}) scale(${scaleX}, 1) translate(${-cx}, ${-cy}) rotate(${angle} ${cx} ${cy})`);
     block.group.setAttribute("data-rotation", String(angle));
+    block.group.setAttribute("data-mirrored", String(block.mirrored || false));
   }
 
   function resizeBlock(block, width, height) {
