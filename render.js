@@ -2595,8 +2595,13 @@ export function createRenderer({
       if (stubbedPoints !== routedPoints) {
         conn.points = stubbedPoints;
       }
-      let finalPoints = simplifyOrthogonalPath(applyWireOffsets(conn, stubbedPoints));
-      finalPoints = tryShorterOrthogonalPath(conn, finalPoints);
+      let finalPoints;
+      if (state.autoRoute !== false) {
+        finalPoints = simplifyOrthogonalPath(applyWireOffsets(conn, stubbedPoints));
+        finalPoints = tryShorterOrthogonalPath(conn, finalPoints);
+      } else {
+        finalPoints = applyWireOffsets(conn, stubbedPoints);
+      }
       if (!finalPoints.length || hasInvalidPoint(finalPoints)) return;
       const segments = buildSegments(finalPoints, conn);
       const d = buildPathWithHops(segments, []);

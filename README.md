@@ -2,7 +2,7 @@
 
 Vibesim is a browser-based block diagram simulator for control systems. Build diagrams by dragging blocks onto the canvas, wire them together, and simulate behavior directly in the UI.
 
-Deployed site: https://sim.vibefoil.com
+![Vibesim Screenshot](vibesim.png)
 
 ## Features
 
