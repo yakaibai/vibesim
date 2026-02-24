@@ -1,23 +1,20 @@
-import { state, markDirty, clearDirty, signalDiagramChanged, setCurrentFilePath, getCurrentFilePath, setFitToDiagram, setUpdateStabilityPanel } from './src/state.js';
-import { toYAML, serializeDiagram, parseYAML, sanitizeFilename } from './src/file-operations.js';
-import { showConfirmSaveModal, handleSaveAsSubsystem, setStatusEl, setDiagramNameInput, setRuntimeInput, setSimDt, setAutoRouteInput, setVariablesInput, setVariablesPreview } from './src/modal-handlers.js';
-import { handleMenuAction, setFileOpenInput, setDeleteSelectionBtn, setHomeBtn as setHomeBtnMenu, setZoomInBtn as setZoomInBtnMenu, setZoomOutBtn as setZoomOutBtnMenu, performOpen, newDiagram } from './src/menu-handlers.js';
-import { openSubsystemFromBlock, closeSubsystemView, loadDiagram, setSubsystemUpBtn, updateSubsystemNavUi, setRendererRef as setRendererRefDiagram } from "./src/diagram-handlers.js";
-import { setRendererRef, getViewBox, setViewBox, getZoomScale, setZoomScale, updateGrid, clearWorkspace, initViewBox, setSvg, setUpdateStatusBar } from './src/workspace-handlers.js';
-import { createRenderer } from "./render.js";
-import { blockLibrary, buildBlockTemplates } from "./blocks/index.js";
-import { diagramToFRD } from "./control/diagram.js";
-import { stabilityMargins } from "./control/margins.js";
-import { parseVariables } from "./utils/expr.js";
-import { createInspector } from "./blocks/inspector.js";
-import { simulate, renderScope } from "./sim.js";
-import { setupGlobalErrorHandlers, createErrorLogButton, showErrorLogInConsole, getLatestErrors } from "./browser-error-logger.js";
-import { renderBlockLibrary, setBlockLibraryGroups, setBlockLibrary, setGridSize, setRendererRef as setRendererRefLibrary, setStatusEl as setStatusElLibrary } from "./src/block-library-handlers.js";
-import { initSidebarUI, initZoomButtons, setStatusElRef, setHomeBtnRef, setZoomInBtnRef, setZoomOutBtnRef, initWindowControls, initModals } from "./src/ui-handlers.js";
-import { initEventListeners, setRendererRef as setRendererRefEvent, setStatusEl as setStatusElEvent, setRuntimeInput as setRuntimeInputEvent, setInspectorBody, setRotateSelectionBtn, setMarginLoopSelect, setMarginOutputText, setRenderInspector as setRenderInspectorEvent } from "./src/event-handlers.js";
+import { state, markDirty, clearDirty, signalDiagramChanged, setCurrentFilePath, getCurrentFilePath, setFitToDiagram, setUpdateStabilityPanel } from './state.js';
+import { toYAML, serializeDiagram, parseYAML, sanitizeFilename } from './file-operations.js';
+import { showConfirmSaveModal, handleSaveAsSubsystem, setStatusEl, setDiagramNameInput, setRuntimeInput, setSimDt, setAutoRouteInput, setVariablesInput, setVariablesPreview } from './modal-handlers.js';
+import { handleMenuAction, setFileOpenInput, setDeleteSelectionBtn, setHomeBtn as setHomeBtnMenu, setZoomInBtn as setZoomInBtnMenu, setZoomOutBtn as setZoomOutBtnMenu, performOpen, newDiagram } from './menu-handlers.js';
+import { openSubsystemFromBlock, closeSubsystemView, loadDiagram, setSubsystemUpBtn, updateSubsystemNavUi, setRendererRef as setRendererRefDiagram } from "./diagram-handlers.js";
+import { setRendererRef, getViewBox, setViewBox, getZoomScale, setZoomScale, updateGrid, clearWorkspace, initViewBox, setSvg, setUpdateStatusBar } from './workspace-handlers.js';
+import { createRenderer } from "../render.js";
+import { blockLibrary, buildBlockTemplates } from "../blocks/index.js";
+import { diagramToFRD } from "../control/diagram.js";
+import { stabilityMargins } from "../control/margins.js";
+import { parseVariables } from "../utils/expr.js";
+import { createInspector } from "../blocks/inspector.js";
+import { simulate, renderScope } from "../sim.js";
+import { renderBlockLibrary, setBlockLibraryGroups, setBlockLibrary, setGridSize, setRendererRef as setRendererRefLibrary, setStatusEl as setStatusElLibrary } from "./block-library-handlers.js";
+import { initSidebarUI, initZoomButtons, setStatusElRef, setHomeBtnRef, setZoomInBtnRef, setZoomOutBtnRef, initWindowControls, initModals } from "./ui-handlers.js";
+import { initEventListeners, setRendererRef as setRendererRefEvent, setStatusEl as setStatusElEvent, setRuntimeInput as setRuntimeInputEvent, setInspectorBody, setRotateSelectionBtn, setMarginLoopSelect, setMarginOutputText, setRenderInspector as setRenderInspectorEvent } from "./event-handlers.js";
 
-setupGlobalErrorHandlers();
-createErrorLogButton();
 
 const themes = [
   { id: "signal-slate", name: "Signal Slate" },
@@ -161,9 +158,11 @@ export function init() {
   diagramNameInput = document.getElementById("diagramName");
   runtimeInput = document.getElementById("runtimeInput");
   simDt = document.getElementById("simDt");
-  autoRouteInput = document.getElementById("autoRoute");
+  autoRouteInput = document.getElementById("autoRouteInput");
   variablesInput = document.getElementById("variablesInput");
   variablesPreview = document.getElementById("variablesPreview");
+  console.log('app.js - variablesInput:', variablesInput);
+  console.log('app.js - variablesPreview:', variablesPreview);
   inspectorBody = document.getElementById("inspectorBody");
   
   setRendererRef(rendererRef);
@@ -413,32 +412,7 @@ export function init() {
       if (statusEl) statusEl.textContent = "Saved diagram";
     });
   }
-  
-  window.addEventListener('keydown', (e) => {
-    if (e.ctrlKey && e.shiftKey && e.key === 'E') {
-      e.preventDefault();
-      showErrorLogInConsole();
-      const logs = getLatestErrors(1);
-      if (logs.length > 0) {
-        const entry = logs[0];
-        const errorText = `${entry.error}\n${entry.filename ? `File: ${entry.filename}:${entry.lineno}:${entry.colno}` : ''}`;
-        navigator.clipboard.writeText(errorText).then(() => {
-          if (statusEl) statusEl.textContent = 'Latest error copied to clipboard!';
-          setTimeout(() => {
-            if (statusEl) statusEl.textContent = '';
-          }, 3000);
-        }).catch(err => {
-          console.error('Failed to copy:', err);
-        });
-      } else {
-        if (statusEl) statusEl.textContent = 'No errors logged';
-        setTimeout(() => {
-          if (statusEl) statusEl.textContent = '';
-        }, 3000);
-      }
-    }
-  });
-  
+
   const menuTrigger = document.querySelector(".menu-trigger");
   const menu = document.querySelector(".menu");
   
@@ -461,11 +435,13 @@ export function init() {
 }
 
 function initVSCodeUI() {
-  init();
   initSidebarUI();
   initZoomButtons();
   initWindowControls();
   initModals();
 }
 
-document.addEventListener('DOMContentLoaded', initVSCodeUI);
+document.addEventListener('DOMContentLoaded', () => {
+  init();
+  initVSCodeUI();
+});

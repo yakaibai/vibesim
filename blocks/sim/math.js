@@ -112,6 +112,17 @@ export const mathSimHandlers = {
       return { updated: prev !== out && !(Number.isNaN(prev) && Number.isNaN(out)) };
     },
   },
+  expCos: {
+    algebraic: (ctx, block) => {
+      const values = getInputValues(ctx, block);
+      if (values[0] === undefined) return null;
+      const inputVal = values[0] ?? 0;
+      const out = Math.exp(Math.cos(inputVal));
+      const prev = ctx.outputs.get(block.id);
+      ctx.outputs.set(block.id, out);
+      return { updated: prev !== out && !(Number.isNaN(prev) && Number.isNaN(out)) };
+    },
+  },
   userFunc: {
     algebraic: (ctx, block) => {
       const values = getInputValues(ctx, block);

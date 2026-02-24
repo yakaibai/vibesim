@@ -2272,6 +2272,28 @@ export function createRenderer({
     if (state.routingScheduled) return;
     state.routingScheduled = true;
     const runForced = force;
+    if (state.fastRouting) {
+      state.routingScheduled = false;
+      const dirtySet = new Set(state.dirtyConnections || []);
+      if (state.dirtyBlocks && state.dirtyBlocks.size > 0) {
+        state.connections.forEach((conn) => {
+          if (dirtySet.has(conn)) return;
+          if (state.dirtyBlocks.has(conn.from) || state.dirtyBlocks.has(conn.to)) {
+            dirtySet.add(conn);
+          }
+        });
+      }
+      dirtySet.forEach((conn) => {
+        conn.points = buildFastDragPathFromPorts(conn);
+      });
+      applyWirePathsFast(dirtySet);
+      state.routingDirty = false;
+      if (state.dirtyBlocks) state.dirtyBlocks.clear();
+      if (state.dirtyConnections) state.dirtyConnections.clear();
+      updateSelectionBox();
+      updateWireCornerHandles();
+      return;
+    }
     requestAnimationFrame(() => {
       state.routingScheduled = false;
       if (state.isPanning || state.isPinching) return;
@@ -2287,27 +2309,6 @@ export function createRenderer({
         }
         state.deferRouting = false;
         state.deferRoutingIds.clear();
-      }
-      if (state.fastRouting) {
-        const dirtySet = new Set(state.dirtyConnections || []);
-        if (state.dirtyBlocks && state.dirtyBlocks.size > 0) {
-          state.connections.forEach((conn) => {
-            if (dirtySet.has(conn)) return;
-            if (state.dirtyBlocks.has(conn.from) || state.dirtyBlocks.has(conn.to)) {
-              dirtySet.add(conn);
-            }
-          });
-        }
-        dirtySet.forEach((conn) => {
-          conn.points = buildFastDragPathFromPorts(conn);
-        });
-        applyWirePathsFast(dirtySet);
-        state.routingDirty = false;
-        if (state.dirtyBlocks) state.dirtyBlocks.clear();
-        if (state.dirtyConnections) state.dirtyConnections.clear();
-        updateSelectionBox();
-        updateWireCornerHandles();
-        return;
       }
       if (state.autoRoute === false) {
         state.debugRouteMode = "manual";
@@ -2984,15 +2985,15 @@ export function createRenderer({
     const prevPoints = (conn.points || []).filter((pt) => Number.isFinite(pt.x) && Number.isFinite(pt.y));
     const movingFrom = state.dirtyBlocks?.has(conn.from) && !state.dirtyBlocks?.has(conn.to);
     const movingTo = state.dirtyBlocks?.has(conn.to) && !state.dirtyBlocks?.has(conn.from);
-    if ((movingFrom || movingTo) && prevPoints.length >= 4) {
+    const bothMoving = state.dirtyBlocks?.has(conn.from) && state.dirtyBlocks?.has(conn.to);
+    
+    if (prevPoints.length >= 4) {
       const turnIndices = getTurnIndices(prevPoints);
       if (turnIndices.length >= 2) {
-        const anchorIdx = movingFrom
-          ? turnIndices[1]
-          : turnIndices[turnIndices.length - 2];
-        const anchor = prevPoints[anchorIdx];
-        if (anchor) {
-          if (movingFrom && anchorIdx > 0) {
+        if (movingFrom) {
+          const anchorIdx = Math.min(turnIndices[1], turnIndices[Math.floor(turnIndices.length / 2)]);
+          const anchor = prevPoints[anchorIdx];
+          if (anchor && anchorIdx > 0) {
             const approach = segmentOrientation(prevPoints[anchorIdx - 1], anchor);
             if (approach) {
               const head = buildDragPathToAnchor(start, startSide, anchor, approach);
@@ -3000,12 +3001,28 @@ export function createRenderer({
               return dedupePoints([...head, ...tail]);
             }
           }
-          if (movingTo && anchorIdx < prevPoints.length - 1) {
+        } else if (movingTo) {
+          const anchorIdx = Math.max(turnIndices[turnIndices.length - 2], turnIndices[Math.floor(turnIndices.length / 2)]);
+          const anchor = prevPoints[anchorIdx];
+          if (anchor && anchorIdx < prevPoints.length - 1) {
             const approach = segmentOrientation(anchor, prevPoints[anchorIdx + 1]);
             if (approach) {
               const tailFromEnd = buildDragPathToAnchor(end, endSide, anchor, approach);
               const tail = dedupePoints(tailFromEnd.slice().reverse());
               const head = prevPoints.slice(0, anchorIdx + 1);
+              return dedupePoints([...head, ...tail.slice(1)]);
+            }
+          }
+        } else if (bothMoving && turnIndices.length >= 3) {
+          const midIdx = turnIndices[Math.floor(turnIndices.length / 2)];
+          const midAnchor = prevPoints[midIdx];
+          if (midAnchor && midIdx > 0 && midIdx < prevPoints.length - 1) {
+            const approachFrom = segmentOrientation(prevPoints[midIdx - 1], midAnchor);
+            const approachTo = segmentOrientation(midAnchor, prevPoints[midIdx + 1]);
+            if (approachFrom && approachTo) {
+              const head = buildDragPathToAnchor(start, startSide, midAnchor, approachFrom);
+              const tailFromEnd = buildDragPathToAnchor(end, endSide, midAnchor, approachTo);
+              const tail = dedupePoints(tailFromEnd.slice().reverse());
               return dedupePoints([...head, ...tail.slice(1)]);
             }
           }

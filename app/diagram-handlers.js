@@ -159,25 +159,43 @@ export function loadDiagram(data, options = {}) {
   const blocks = Array.isArray(data.blocks) ? data.blocks : [];
   const connections = Array.isArray(data.connections) ? data.connections : [];
   state.diagramName = typeof data.name === "string" && data.name.trim() ? data.name.trim() : "vibesim";
-  if (diagramNameInput) diagramNameInput.value = state.diagramName;
-  if (runtimeInput && Number.isFinite(Number(data.runtime))) {
-    runtimeInput.value = String(Number(data.runtime));
+  // 直接使用 document.getElementById 获取元素，确保即使模块级变量未设置也能更新 UI
+  const diagramNameInputEl = diagramNameInput || document.getElementById("diagramName");
+  if (diagramNameInputEl) diagramNameInputEl.value = state.diagramName;
+  
+  const runtimeInputEl = runtimeInput || document.getElementById("runtimeInput");
+  if (runtimeInputEl && Number.isFinite(Number(data.runtime))) {
+    runtimeInputEl.value = String(Number(data.runtime));
   }
-  if (simDt && Number.isFinite(Number(data.sampleTime))) {
-    simDt.value = String(Number(data.sampleTime));
-    const value = Number(simDt.value);
+  
+  const simDtEl = simDt || document.getElementById("simDt");
+  if (simDtEl && Number.isFinite(Number(data.sampleTime))) {
+    simDtEl.value = String(Number(data.sampleTime));
+    const value = Number(simDtEl.value);
     state.sampleTime = Number.isFinite(value) && value > 0 ? value : 0.01;
   }
+  
   state.autoRoute = data.autoRoute !== false;
-  if (autoRouteInput) autoRouteInput.checked = state.autoRoute;
+  const autoRouteInputEl = autoRouteInput || document.getElementById("autoRouteInput");
+  if (autoRouteInputEl) autoRouteInputEl.checked = state.autoRoute;
   state.variablesText = typeof data.variables === "string" ? data.variables : "";
-  if (variablesInput) variablesInput.value = state.variablesText;
+  console.log('loadDiagram - variablesText:', state.variablesText);
+  // 直接使用 document.getElementById 获取元素，确保即使模块级变量未设置也能更新 UI
+  const variablesInputEl = variablesInput || document.getElementById("variablesInput");
+  if (variablesInputEl) {
+    console.log('loadDiagram - setting variablesInput.value:', state.variablesText);
+    variablesInputEl.value = state.variablesText;
+  }
   const parsed = parseVariables(state.variablesText);
   state.variables = parsed.vars;
   state.variablesDisplay = parsed.display;
-  if (variablesPreview) {
+  console.log('loadDiagram - parsed variables:', state.variables);
+  console.log('loadDiagram - variablesDisplay:', state.variablesDisplay);
+  const variablesPreviewEl = variablesPreview || document.getElementById("variablesPreview");
+  if (variablesPreviewEl) {
     const entries = state.variablesDisplay.join("\n");
-    variablesPreview.textContent = entries || "No variables defined.";
+    variablesPreviewEl.textContent = entries || "No variables defined.";
+    console.log('loadDiagram - setting variablesPreview.textContent:', entries);
   }
   if (!preserveSubsystemStack) {
     state.subsystemStack = [];

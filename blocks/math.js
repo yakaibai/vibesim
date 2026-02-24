@@ -10,6 +10,7 @@ export const mathLibrary = {
     { type: "abs", label: "Absolute value" },
     { type: "min", label: "Min" },
     { type: "max", label: "Max" },
+    { type: "expCos", label: "Exp(Cos)" },
     { type: "userFunc", label: "User defined function" },
   ],
 };
@@ -153,6 +154,20 @@ export const createMathTemplates = (helpers) => {
         const mathGroup = createSvgElement("g", { class: "math-block" });
         group.appendChild(mathGroup);
         renderTeXMath(mathGroup, "\\scriptsize\\max", block.width, block.height);
+      },
+    },
+    expCos: {
+      width: 100,
+      height: 80,
+      inputs: [{ x: 0, y: 40, side: "left" }],
+      outputs: [{ x: 100, y: 40, side: "right" }],
+      defaultParams: {},
+      render: (block) => {
+        const group = block.group;
+        group.appendChild(createSvgElement("rect", { x: 0, y: 0, width: block.width, height: block.height, class: "block-body" }));
+        const mathGroup = createSvgElement("g", { class: "math-block" });
+        group.appendChild(mathGroup);
+        renderTeXMath(mathGroup, "\\scriptsize{e^{\\cos(u)}}", block.width, block.height);
       },
     },
     userFunc: {

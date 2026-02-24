@@ -1,0 +1,158 @@
+/* Block styles */
+.svg-block {
+  cursor: grab;
+}
+
+.svg-block:active {
+  cursor: grabbing;
+}
+
+.svg-block text {
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  font-size: 12px;
+  fill: var(--vscode-foreground);
+  pointer-events: none;
+}
+
+.block-body {
+  fill: var(--vscode-input-background);
+  stroke: var(--vscode-border);
+  stroke-width: 1;
+}
+
+.block-port {
+  fill: var(--vscode-button-background);
+  stroke: var(--vscode-border);
+  stroke-width: 1;
+}
+
+.block-port:hover {
+  fill: var(--vscode-button-hover-background);
+}
+
+.block-selected .block-body {
+  stroke: var(--vscode-button-background);
+  stroke-width: 2;
+}
+
+/* Sum block styles */
+.sum-circle {
+  fill: var(--vscode-input-background);
+  stroke: var(--vscode-border);
+  stroke-width: 1;
+}
+
+.sum-text {
+  font-size: 10px;
+  font-weight: bold;
+}
+
+/* Gain block styles */
+.gain-triangle {
+  fill: var(--vscode-input-background);
+  stroke: var(--vscode-border);
+  stroke-width: 1;
+}
+
+/* Scope block styles */
+.scope-plot {
+  fill: var(--vscode-input-background);
+  stroke: var(--vscode-border);
+  stroke-width: 1;
+}
+
+.scope-axis {
+  stroke: var(--vscode-border);
+  stroke-width: 0.5;
+}
+
+.scope-tick {
+  stroke: var(--vscode-border);
+  stroke-width: 0.5;
+}
+
+.scope-label {
+  font-size: 10px;
+}
+
+/* Source block styles */
+.source-plot {
+  fill: var(--vscode-input-background);
+  stroke: var(--vscode-border);
+  stroke-width: 1;
+}
+
+.source-axis {
+  stroke: var(--vscode-border);
+  stroke-width: 0.5;
+}
+
+/* Math block styles */
+.math-block {
+  font-family: 'KaTeX_Main', 'Times New Roman', serif;
+}
+
+/* User function block styles */
+.userfunc-block {
+  font-family: 'Courier New', monospace;
+  font-size: 11px;
+}
+
+/* Subsystem block styles */
+.subsystem-block {
+  fill: var(--vscode-input-background);
+  stroke: var(--vscode-border);
+  stroke-width: 1;
+}
+
+.subsystem-port {
+  fill: var(--vscode-button-background);
+  stroke: var(--vscode-border);
+  stroke-width: 1;
+}
+
+.subsystem-label {
+  font-size: 10px;
+  font-weight: bold;
+}
+
+/* Connection styles */
+.connection-wire {
+  stroke: var(--wire);
+  stroke-width: 1.5;
+  fill: none;
+}
+
+.connection-wire:hover {
+  stroke-width: 2;
+}
+
+.connection-selected {
+  stroke-width: 2.5;
+  stroke: var(--vscode-button-background);
+}
+
+/* Hop points */
+.hop-point {
+  fill: var(--vscode-button-background);
+  stroke: var(--vscode-foreground);
+  stroke-width: 1;
+}
+
+.hop-point:hover {
+  fill: var(--vscode-button-hover-background);
+  stroke-width: 2;
+}
+
+/* Corner handles */
+.corner-handle {
+  fill: var(--vscode-button-background);
+  stroke: var(--vscode-foreground);
+  stroke-width: 1;
+  cursor: move;
+}
+
+.corner-handle:hover {
+  fill: var(--vscode-button-hover-background);
+  stroke-width: 2;
+}

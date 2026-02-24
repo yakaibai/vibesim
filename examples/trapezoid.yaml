@@ -664,5 +664,5 @@ connections:
     points: [[2310,1610],[2330,1610],[2330,1540],[2360,1540]]
 variables: ""
 sampleTime: 0.001
-runtime: 10
+runtime: 30
 autoRoute: true

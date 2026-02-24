@@ -148,3 +148,8 @@ Contributions are welcome! Please ensure:
 - Tests pass before submitting
 - Changes are minimal and focused
 - Documentation is updated as needed
+
+## TODO for next release
+
+[ ] Theme support (light/dark) enhancement
+[ ] 

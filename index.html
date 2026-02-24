@@ -7,6 +7,7 @@
   <meta name="color-scheme" content="dark">
   <title>Vibesim - Control System Simulator</title>
   <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="styles/about.css">
   <link rel="stylesheet" href="assets/katex/katex.min.css">
   <script src="assets/katex/katex.min.js" defer></script>
 </head>
@@ -196,6 +197,7 @@
             <div class="variables-editor">
               <textarea id="variablesInput" rows="6" placeholder="k=2&#10;w=3.14"></textarea>
               <button id="applyVariables" class="btn btn-sm">Apply</button>
+              <pre id="variablesPreview" class="variables-preview">No variables defined.</pre>
             </div>
           </div>
         </div>
@@ -395,7 +397,7 @@
       </div>
     </div>
   </div>
-
+<!--This is about modal-->
   <div class="modal" id="aboutModal">
     <div class="modal-content about-modal">
       <div class="about-header">
@@ -437,6 +439,6 @@
     </div>
   </div>
 
-  <script type="module" src="app-new.js"></script>
+  <script type="module" src="./app/app.js"></script>
 </body>
 </html>
