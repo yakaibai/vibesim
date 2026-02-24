@@ -1,7 +1,8 @@
 import { state, clearDirty, getCurrentFilePath, setCurrentFilePath } from './state.js';
 import { toYAML, serializeDiagram, parseYAML, sanitizeFilename } from './file-operations.js';
 import { showConfirmSaveModal, handleSaveAsSubsystem } from './modal-handlers.js';
-import { loadDiagram } from './diagram-handlers.js';
+import { loadDiagram, updateSubsystemNavUi } from './diagram-handlers.js';
+import { clearWorkspace } from './workspace-handlers.js';
 
 let statusEl = null;
 let currentFilePath = null;
@@ -10,6 +11,12 @@ let deleteSelectionBtn = null;
 let homeBtn = null;
 let zoomInBtn = null;
 let zoomOutBtn = null;
+let diagramNameInput = null;
+let runtimeInput = null;
+let simDt = null;
+let autoRouteInput = null;
+let variablesInput = null;
+let variablesPreview = null;
 
 export function setStatusEl(el) {
   statusEl = el;
@@ -33,6 +40,30 @@ export function setZoomInBtn(el) {
 
 export function setZoomOutBtn(el) {
   zoomOutBtn = el;
+}
+
+export function setDiagramNameInput(el) {
+  diagramNameInput = el;
+}
+
+export function setRuntimeInput(el) {
+  runtimeInput = el;
+}
+
+export function setSimDt(el) {
+  simDt = el;
+}
+
+export function setAutoRouteInput(el) {
+  autoRouteInput = el;
+}
+
+export function setVariablesInput(el) {
+  variablesInput = el;
+}
+
+export function setVariablesPreview(el) {
+  variablesPreview = el;
 }
 
 export function performOpen() {
@@ -71,8 +102,6 @@ export function newDiagram() {
   state.autoRoute = true;
   if (autoRouteInput) autoRouteInput.checked = state.autoRoute;
   state.variablesText = "";
-  const variablesInput = document.getElementById("variablesInput");
-  const variablesPreview = document.getElementById("variablesPreview");
   if (variablesInput) variablesInput.value = state.variablesText;
   state.variables = {};
   state.variablesDisplay = [];
@@ -80,8 +109,10 @@ export function newDiagram() {
     variablesPreview.textContent = "No variables defined.";
   }
   state.subsystemStack = [];
-  updateSubsystemNavUi();
-  renderer.clearWorkspace();
+  if (typeof updateSubsystemNavUi === "function") {
+    updateSubsystemNavUi();
+  }
+  clearWorkspace();
   state.spawnIndex = 0;
   state.loadingDiagram = false;
   state.routingDirty = false;
@@ -98,49 +129,45 @@ export function newDiagram() {
 export function handleMenuAction(action) {
   switch (action) {
     case 'new':
-      if (state.dirty) {
-        showConfirmSaveModal((shouldSave) => {
-          if (shouldSave === true) {
-            const yaml = toYAML(serializeDiagram(state));
-            if (window.electron) {
-              const path = getCurrentFilePath();
-              if (path) {
-                window.electron.saveFile(yaml, path).then(result => {
-                  if (result.success) {
-                    clearDirty();
-                    newDiagram();
-                  }
-                });
-              } else {
-                window.electron.saveFileAs(yaml, `${sanitizeFilename(state.diagramName)}.yaml`).then(result => {
-                  if (result.success && !result.canceled) {
-                    clearDirty();
-                    newDiagram();
-                  } else if (!result.canceled) {
-                    newDiagram();
-                  }
-                });
-              }
+      showConfirmSaveModal((shouldSave) => {
+        if (shouldSave === true) {
+          const yaml = toYAML(serializeDiagram(state));
+          if (window.electron) {
+            const path = getCurrentFilePath();
+            if (path) {
+              window.electron.saveFile(yaml, path).then(result => {
+                if (result.success) {
+                  clearDirty();
+                  newDiagram();
+                }
+              });
             } else {
-              const blob = new Blob([yaml], { type: "text/yaml" });
-              const url = URL.createObjectURL(blob);
-              const link = document.createElement("a");
-              link.href = url;
-              link.download = getCurrentFilePath() || `${sanitizeFilename(state.diagramName)}.yaml`;
-              document.body.appendChild(link);
-              link.click();
-              document.body.removeChild(link);
-              URL.revokeObjectURL(url);
-              clearDirty();
-              newDiagram();
+              window.electron.saveFileAs(yaml, `${sanitizeFilename(state.diagramName)}.yaml`).then(result => {
+                if (result.success && !result.canceled) {
+                  clearDirty();
+                  newDiagram();
+                } else if (!result.canceled) {
+                  newDiagram();
+                }
+              });
             }
-          } else if (shouldSave === false) {
+          } else {
+            const blob = new Blob([yaml], { type: "text/yaml" });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement("a");
+            link.href = url;
+            link.download = getCurrentFilePath() || `${sanitizeFilename(state.diagramName)}.yaml`;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            URL.revokeObjectURL(url);
+            clearDirty();
             newDiagram();
           }
-        });
-      } else {
-        newDiagram();
-      }
+        } else if (shouldSave === false) {
+          newDiagram();
+        }
+      });
       break;
     case 'open':
       if (state.dirty) {
@@ -298,26 +325,17 @@ export function handleMenuAction(action) {
     case 'zoomOut':
       if (zoomOutBtn) zoomOutBtn.click();
       break;
-    case 'theme-dark':
-      document.documentElement.setAttribute('data-theme', 'dark');
-      localStorage.setItem('theme', 'dark');
-      break;
-    case 'theme-light':
-      document.documentElement.setAttribute('data-theme', 'light');
-      localStorage.setItem('theme', 'light');
-      break;
-    case 'theme-monokai':
-      document.documentElement.setAttribute('data-theme', 'monokai');
-      localStorage.setItem('theme', 'monokai');
-      break;
-    case 'theme-dracula':
-      document.documentElement.setAttribute('data-theme', 'dracula');
-      localStorage.setItem('theme', 'dracula');
-      break;
     case 'about':
       const aboutModal = document.getElementById('aboutModal');
       if (aboutModal) {
         aboutModal.classList.add('show');
+      }
+      break;
+    default:
+      if (action.startsWith('theme-')) {
+        const themeId = action.replace('theme-', '');
+        document.documentElement.setAttribute('data-theme', themeId);
+        localStorage.setItem('theme', themeId);
       }
       break;
   }

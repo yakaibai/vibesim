@@ -1611,7 +1611,7 @@ export function createRenderer({
   }
 
   function updateScopeLayout(block) {
-    if (!block || (block.type !== "scope" && block.type !== "xyScope")) return;
+    if (!block || (block.type !== "scope" && block.type !== "xyScope" && block.type !== "xyzScope")) return;
     const { width, height } = clampScopeSize(block.width, block.height);
     block.width = width;
     block.height = height;

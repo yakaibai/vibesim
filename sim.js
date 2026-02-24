@@ -79,9 +79,10 @@ export async function simulate({ state, runtimeInput, statusEl, downloadFile, se
     const needsAlgebraicSolve = hasLabelResolution || algebraicBlocks.length > 0;
     const scopes = blocks.filter((b) => b.type === "scope");
     const xyScopes = blocks.filter((b) => b.type === "xyScope");
+    const xyzScopes = blocks.filter((b) => b.type === "xyzScope");
     const fileSinks = blocks.filter((b) => b.type === "fileSink");
 
-    if (scopes.length === 0 && xyScopes.length === 0 && fileSinks.length === 0) {
+    if (scopes.length === 0 && xyScopes.length === 0 && xyzScopes.length === 0 && fileSinks.length === 0) {
       if (statusEl) statusEl.textContent = "Add a Scope block";
       return { status: "error", reason: "no_scope", session: null };
     }
@@ -163,6 +164,7 @@ export async function simulate({ state, runtimeInput, statusEl, downloadFile, se
       labelSourceBlocks,
       scopes,
       xyScopes,
+      xyzScopes,
       fileSinks,
       dt,
       samples,
@@ -249,6 +251,11 @@ export async function simulate({ state, runtimeInput, statusEl, downloadFile, se
         if (!state?.xySeries) return;
         drawXYScope(scope, state.xySeries, state.xyConnected || []);
       });
+      run.xyzScopes.forEach((scope) => {
+        const state = run.blockState.get(scope.id);
+        if (!state?.xyzSeries) return;
+        drawXYZScope(scope, state.xyzSeries, state.xyzConnected || []);
+      });
 
       if (run.algebraicLoopFailed) break;
       if (control?.pauseRequested === true) {
@@ -298,6 +305,11 @@ export async function simulate({ state, runtimeInput, statusEl, downloadFile, se
     if (!state?.xySeries) return;
     drawXYScope(scope, state.xySeries, state.xyConnected || []);
   });
+  run.xyzScopes.forEach((scope) => {
+    const state = run.blockState.get(scope.id);
+    if (!state?.xyzSeries) return;
+    drawXYZScope(scope, state.xyzSeries, state.xyzConnected || []);
+  });
 
   if (statusEl) statusEl.textContent = "Done";
   if (onStatusUpdate) onStatusUpdate("Done", run.time[run.time.length - 1]);
@@ -314,9 +326,18 @@ export function drawXYScope(scopeBlock, series, connected) {
   renderXYScope(scopeBlock);
 }
 
+export function drawXYZScope(scopeBlock, series, connected) {
+  scopeBlock.xyzScopeData = { series, connected };
+  renderXYZScope(scopeBlock);
+}
+
 export function renderScope(scopeBlock) {
   if (scopeBlock.type === "xyScope") {
     renderXYScope(scopeBlock);
+    return;
+  }
+  if (scopeBlock.type === "xyzScope") {
+    renderXYZScope(scopeBlock);
     return;
   }
   if (!scopeBlock.scopePaths || !scopeBlock.scopePlot || !scopeBlock.scopeData) return;
@@ -772,6 +793,234 @@ export function renderXYScope(scopeBlock) {
     xMax,
     yMin,
     yMax,
+  };
+  refreshParamDisplay(scopeBlock);
+}
+
+export function renderXYZScope(scopeBlock) {
+  if (!scopeBlock.scopePaths || !scopeBlock.scopePlot || !scopeBlock.xyzScopeData) return;
+  const { connected } = scopeBlock.xyzScopeData;
+  if (connected && (!connected[0] || !connected[1] || !connected[2])) {
+    scopeBlock.scopePaths.forEach((path) => path.setAttribute("d", ""));
+    if (scopeBlock.scopeAxes?.xTickLabels) scopeBlock.scopeAxes.xTickLabels.forEach((label) => label.setAttribute("display", "none"));
+    if (scopeBlock.scopeAxes?.yTickLabels) scopeBlock.scopeAxes.yTickLabels.forEach((label) => label.setAttribute("display", "none"));
+    if (scopeBlock.scopeAxes?.zTickLabels) scopeBlock.scopeAxes.zTickLabels.forEach((label) => label.setAttribute("display", "none"));
+    refreshParamDisplay(scopeBlock);
+    return;
+  }
+  const plot = scopeBlock.scopePlot;
+  const plotX = Number(plot.getAttribute("x"));
+  const plotY = Number(plot.getAttribute("y"));
+  const plotW = Number(plot.getAttribute("width"));
+  const plotH = Number(plot.getAttribute("height"));
+  const axes = scopeBlock.scopeAxes;
+  const showTickLabels = scopeBlock.params?.showTickLabels === true;
+  const parseLimit = (value) => {
+    if (value == null) return null;
+    if (typeof value === "number" && Number.isFinite(value)) return value;
+    if (typeof value === "string") {
+      const trimmed = value.trim();
+      if (!trimmed) return null;
+      const num = Number(trimmed);
+      return Number.isFinite(num) ? num : null;
+    }
+    return null;
+  };
+  const niceStep = (range, target = 5) => {
+    if (!Number.isFinite(range) || range <= 0) return 1;
+    const raw = range / target;
+    const pow = Math.pow(10, Math.floor(Math.log10(raw)));
+    const scaled = raw / pow;
+    let step = 1;
+    if (scaled <= 1) step = 1;
+    else if (scaled <= 2) step = 2;
+    else if (scaled <= 5) step = 5;
+    else step = 10;
+    return step * pow;
+  };
+  const buildTicks = (min, max, step) => {
+    if (!Number.isFinite(min) || !Number.isFinite(max) || !Number.isFinite(step) || step <= 0) return [];
+    const start = Math.ceil(min / step) * step;
+    const ticks = [];
+    for (let v = start; v <= max + step * 0.5; v += step) ticks.push(v);
+    return ticks;
+  };
+  const formatTick = (value) => {
+    if (!Number.isFinite(value)) return "";
+    if (value === 0) return "0";
+    const abs = Math.abs(value);
+    if (abs >= 10000 || abs < 1e-3) return value.toExponential(1).replace("+", "");
+    return Number(value.toPrecision(3)).toString();
+  };
+  const { series } = scopeBlock.xyzScopeData;
+  const xSeries = series.x || [];
+  const ySeries = series.y || [];
+  const zSeries = series.z || [];
+  const xMinParam = parseLimit(scopeBlock.params?.xMin);
+  const xMaxParam = parseLimit(scopeBlock.params?.xMax);
+  const yMinParam = parseLimit(scopeBlock.params?.yMin);
+  const yMaxParam = parseLimit(scopeBlock.params?.yMax);
+  const zMinParam = parseLimit(scopeBlock.params?.zMin);
+  const zMaxParam = parseLimit(scopeBlock.params?.zMax);
+  const points = [];
+  let observedXMin = Infinity;
+  let observedXMax = -Infinity;
+  let observedYMin = Infinity;
+  let observedYMax = -Infinity;
+  let observedZMin = Infinity;
+  let observedZMax = -Infinity;
+  const pointCount = Math.min(xSeries.length, ySeries.length, zSeries.length);
+  for (let idx = 0; idx < pointCount; idx += 1) {
+    const x = xSeries[idx];
+    const y = ySeries[idx];
+    const z = zSeries[idx];
+    if (x == null || y == null || z == null || !Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(z)) continue;
+    points.push({ x, y, z });
+    if (x < observedXMin) observedXMin = x;
+    if (x > observedXMax) observedXMax = x;
+    if (y < observedYMin) observedYMin = y;
+    if (y > observedYMax) observedYMax = y;
+    if (z < observedZMin) observedZMin = z;
+    if (z > observedZMax) observedZMax = z;
+  }
+  if (points.length === 0) {
+    scopeBlock.scopePaths.forEach((path) => path.setAttribute("d", ""));
+    if (axes?.xTickLabels) axes.xTickLabels.forEach((label) => label.setAttribute("display", "none"));
+    if (axes?.yTickLabels) axes.yTickLabels.forEach((label) => label.setAttribute("display", "none"));
+    if (axes?.zTickLabels) axes.zTickLabels.forEach((label) => label.setAttribute("display", "none"));
+    scopeBlock.computedLimits = {
+      xMin: xMinParam != null ? xMinParam : -1.2,
+      xMax: xMaxParam != null ? xMaxParam : 1.2,
+      yMin: yMinParam != null ? yMinParam : -1.2,
+      yMax: yMaxParam != null ? yMaxParam : 1.2,
+      zMin: zMinParam != null ? zMinParam : -1.2,
+      zMax: zMaxParam != null ? zMaxParam : 1.2,
+    };
+    refreshParamDisplay(scopeBlock);
+    return;
+  }
+  let xMin = observedXMin;
+  let xMax = observedXMax;
+  let yMin = observedYMin;
+  let yMax = observedYMax;
+  let zMin = observedZMin;
+  let zMax = observedZMax;
+  if (xMinParam != null) xMin = xMinParam;
+  if (xMaxParam != null) xMax = xMaxParam;
+  if (yMinParam != null) yMin = yMinParam;
+  if (yMaxParam != null) yMax = yMaxParam;
+  if (zMinParam != null) zMin = zMinParam;
+  if (zMaxParam != null) zMax = zMaxParam;
+  if (xMax === xMin) {
+    xMax += 1;
+    xMin -= 1;
+  }
+  if (yMax === yMin) {
+    yMax += 1;
+    yMin -= 1;
+  }
+  if (zMax === zMin) {
+    zMax += 1;
+    zMin -= 1;
+  }
+  if (xMinParam == null && xMaxParam == null) {
+    const maxAbs = Math.max(Math.abs(xMax), Math.abs(xMin), 1e-6);
+    xMax = maxAbs * 1.2;
+    xMin = -maxAbs * 1.2;
+  }
+  if (yMinParam == null && yMaxParam == null) {
+    const maxAbs = Math.max(Math.abs(yMax), Math.abs(yMin), 1e-6);
+    yMax = roundToSignificant(maxAbs * 1.2, 2);
+    yMin = roundToSignificant(-maxAbs * 1.2, 2);
+  }
+  if (zMinParam == null && zMaxParam == null) {
+    const maxAbs = Math.max(Math.abs(zMax), Math.abs(zMin), 1e-6);
+    zMax = roundToSignificant(maxAbs * 1.2, 2);
+    zMin = roundToSignificant(-maxAbs * 1.2, 2);
+  }
+  const xRange = xMax - xMin;
+  const yRange = yMax - yMin;
+  const zRange = zMax - zMin;
+  const centerX = plotX + plotW / 2;
+  const centerY = plotY + plotH / 2;
+  const maxRange = Math.max(xRange, yRange, zRange);
+  const scale = Math.min(plotW, plotH) / maxRange * 0.7;
+  const rotationX = (scopeBlock.params?.rotationX ?? 30) * Math.PI / 180;
+  const rotationY = (scopeBlock.params?.rotationY ?? 45) * Math.PI / 180;
+  const project3D = (x, y, z) => {
+    const nx = (x - xMin - xRange / 2) * scale;
+    const ny = (y - yMin - yRange / 2) * scale;
+    const nz = (z - zMin - zRange / 2) * scale;
+    const cosX = Math.cos(rotationX);
+    const sinX = Math.sin(rotationX);
+    const cosY = Math.cos(rotationY);
+    const sinY = Math.sin(rotationY);
+    const y1 = ny * cosX - nz * sinX;
+    const z1 = ny * sinX + nz * cosX;
+    const x2 = nx * cosY + z1 * sinY;
+    const y2 = -nx * sinY + z1 * cosY;
+    return {
+      x: centerX + x2,
+      y: centerY + y1
+    };
+  };
+  if (axes) {
+    const origin = project3D(0, 0, 0);
+    const xAxisEnd = project3D(xMax, 0, 0);
+    const yAxisEnd = project3D(0, yMax, 0);
+    const zAxisEnd = project3D(0, 0, zMax);
+    
+    const xAxisDir = { x: xAxisEnd.x - origin.x, y: xAxisEnd.y - origin.y };
+    const yAxisDir = { x: yAxisEnd.x - origin.x, y: yAxisEnd.y - origin.y };
+    const zAxisDir = { x: zAxisEnd.x - origin.x, y: zAxisEnd.y - origin.y };
+    
+    const xAxisLen = Math.sqrt(xAxisDir.x * xAxisDir.x + xAxisDir.y * xAxisDir.y);
+    const yAxisLen = Math.sqrt(yAxisDir.x * yAxisDir.x + yAxisDir.y * yAxisDir.y);
+    const zAxisLen = Math.sqrt(zAxisDir.x * zAxisDir.x + zAxisDir.y * zAxisDir.y);
+    
+    const xAxisNorm = xAxisLen > 0 ? { x: xAxisDir.x / xAxisLen, y: xAxisDir.y / xAxisLen } : { x: 1, y: 0 };
+    const yAxisNorm = yAxisLen > 0 ? { x: yAxisDir.x / yAxisLen, y: yAxisDir.y / yAxisLen } : { x: 0, y: 1 };
+    const zAxisNorm = zAxisLen > 0 ? { x: zAxisDir.x / zAxisLen, y: zAxisDir.y / zAxisLen } : { x: 0, y: 1 };
+    
+    const xAxisPerp = { x: -xAxisNorm.y, y: xAxisNorm.x };
+    const yAxisPerp = { x: -yAxisNorm.y, y: yAxisNorm.x };
+    const zAxisPerp = { x: -zAxisNorm.y, y: zAxisNorm.x };
+    
+    axes.xAxis.setAttribute("x1", origin.x);
+    axes.xAxis.setAttribute("y1", origin.y);
+    axes.xAxis.setAttribute("x2", xAxisEnd.x);
+    axes.xAxis.setAttribute("y2", xAxisEnd.y);
+    axes.yAxis.setAttribute("x1", origin.x);
+    axes.yAxis.setAttribute("y1", origin.y);
+    axes.yAxis.setAttribute("x2", yAxisEnd.x);
+    axes.yAxis.setAttribute("y2", yAxisEnd.y);
+    axes.zAxis.setAttribute("x1", origin.x);
+    axes.zAxis.setAttribute("y1", origin.y);
+    axes.zAxis.setAttribute("x2", zAxisEnd.x);
+    axes.zAxis.setAttribute("y2", zAxisEnd.y);
+    
+    axes.xTicks.forEach((tick) => tick.setAttribute("display", "none"));
+    axes.yTicks.forEach((tick) => tick.setAttribute("display", "none"));
+    axes.zTicks.forEach((tick) => tick.setAttribute("display", "none"));
+    axes.xTickLabels?.forEach((label) => label.setAttribute("display", "none"));
+    axes.yTickLabels?.forEach((label) => label.setAttribute("display", "none"));
+    axes.zTickLabels?.forEach((label) => label.setAttribute("display", "none"));
+  }
+  const path = points
+    .map((p, i) => {
+      const proj = project3D(p.x, p.y, p.z);
+      return `${i === 0 ? "M" : "L"} ${proj.x} ${proj.y}`;
+    })
+    .join(" ");
+  const pathEl = scopeBlock.scopePaths[0];
+  if (pathEl) pathEl.setAttribute("d", path);
+  scopeBlock.computedLimits = {
+    xMin,
+    xMax,
+    yMin,
+    yMax,
+    zMin,
+    zMax,
   };
   refreshParamDisplay(scopeBlock);
 }

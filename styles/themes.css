@@ -1,3 +1,4 @@
+/* Theme Name: Default Dark */
 :root {
   --vscode-background: #1e1e1e;
   --vscode-foreground: #cccccc;
@@ -61,6 +62,7 @@
   --selection-fill: rgba(0, 122, 204, 0.1);
 }
 
+/* Theme Name: Light */
 [data-theme="light"] {
   --vscode-background: #ffffff;
   --vscode-foreground: #333333;
@@ -124,6 +126,7 @@
   --selection-fill: rgba(0, 122, 204, 0.1);
 }
 
+/* Theme Name: Monokai */
 [data-theme="monokai"] {
   --vscode-background: #1e1e2e;
   --vscode-foreground: #d4d4d4;
@@ -187,6 +190,7 @@
   --selection-fill: rgba(166, 226, 46, 0.1);
 }
 
+/* Theme Name: Dracula */
 [data-theme="dracula"] {
   --vscode-background: #282a36;
   --vscode-foreground: #f8f8f2;
@@ -254,6 +258,78 @@
   --titlebar-foreground: #f8f8f2;
   --titlebar-border: #44475a;
   --canvas-background: #282a36;
-  --canvas-grid-color: rgba(255, 255, 255, 0.03);
+  --canvas-grid-color: rgba(255,255, 255, 0.03);
   --selection-fill: rgba(189, 147, 249, 0.1);
+}
+
+/* Theme Name: Solarized */
+[data-theme="solarized"] {
+  --vscode-background: #002b36;
+  --vscode-foreground: #839496;
+  --vscode-border: #586e75;
+  --vscode-sidebar-background: #002b36;
+  --vscode-editor-background: #002b36;
+  --vscode-statusbar-background: #073642;
+  --vscode-statusbar-foreground: #839496;
+  --vscode-activitybar-background: #002b36;
+  --vscode-activitybar-foreground: #839496;
+  --vscode-activitybar-active-background: #073642;
+  --vscode-activitybar-active-border: #2aa198;
+  --vscode-activitybar-active-foreground: #2aa198;
+  --vscode-button-background: #073642;
+  --vscode-button-hover-background: #586e75;
+  --vscode-button-foreground: #839496;
+  --vscode-input-background: #073642;
+  --vscode-input-foreground: #839496;
+  --vscode-input-border: #586e75;
+  --vscode-input-placeholder: #586e75;
+  --vscode-list-active-background: #073642;
+  --vscode-list-hover-background: #002b36;
+  --vscode-list-focus-outline: #2aa198;
+  --vscode-widget-background: #073642;
+  --vscode-widget-border: #586e75;
+  --vscode-widget-shadow: rgba(0, 0, 0, 0.36);
+  --vscode-panel-background: #002b36;
+  --vscode-panel-border: #586e75;
+  --vscode-panel-title-active-border: #2aa198;
+  --vscode-panel-title-inactive-foreground: #586e75;
+  --vscode-panel-title-inactive-hover-foreground: #839496;
+  --vscode-panel-description-foreground: #586e75;
+  --vscode-breadcrumb-background: #002b36;
+  --vscode-breadcrumb-foreground: #586e75;
+  --vscode-breadcrumb-focus-foreground: #839496;
+  --vscode-breadcrumb-active-selection-foreground: #2aa198;
+  --vscode-editorGroup-border: #586e75;
+  --vscode-editorGroupHeader-tabsBackground: #002b36;
+  --vscode-editorGroupHeader-border: #586e75;
+  --vscode-tab-activeBackground: #002b36;
+  --vscode-tab-activeForeground: #839496;
+  --vscode-tab-inactiveBackground: #073642;
+  --vscode-tab-inactiveForeground: #586e75;
+  --vscode-tab-hoverBackground: #073642;
+  --vscode-tab-unfocusedActiveBackground: #002b36;
+  --vscode-tab-unfocusedInactiveBackground: #073642;
+  --vscode-tab-border: #586e75;
+  --vscode-foreground-secondary: #586e75;
+  --vscode-text-link-foreground: #268bd2;
+  --vscode-text-link-activeForeground: #2aa198;
+  --vscode-text-blockquote-background: #073642;
+  --vscode-text-blockquote-border: #586e75;
+  --vscode-text-code-block-background: #073642;
+  --vscode-text-preformat-foreground: #839496;
+  --vscode-warn-foreground: #b58900;
+  --vscode-error-foreground: #dc322f;
+  --vscode-info-foreground: #268bd2;
+  --vscode-ok-foreground: #859900;
+  --grid-size: 20px;
+  --accent: #2aa198;
+  --accent-hover: #268bd2;
+  --accent-3: #dc322f;
+  --wire: #2aa198;
+  --titlebar-background: #002b36;
+  --titlebar-foreground: #839496;
+  --titlebar-border: #586e75;
+  --canvas-background: #002b36;
+  --canvas-grid-color: rgba(147, 161, 161, 0.1);
+  --selection-fill: rgba(42, 161, 152, 0.1);
 }

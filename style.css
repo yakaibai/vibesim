@@ -1186,6 +1186,21 @@ body {
   stroke-width: 1.5;
 }
 
+.scope-axis-x {
+  stroke: #7fd1b9;
+  stroke-width: 2;
+}
+
+.scope-axis-y {
+  stroke: #f5e642;
+  stroke-width: 2;
+}
+
+.scope-axis-z {
+  stroke: #ff6b6b;
+  stroke-width: 2;
+}
+
 .scope-tick {
   stroke: #808080;
   stroke-width: 1.2;
@@ -1193,6 +1208,13 @@ body {
 
 .scope-tick-label {
   fill: #808080;
+  font-size: 9px;
+  font-weight: 500;
+  pointer-events: none;
+}
+
+.scope-tick-label-z {
+  fill: #ff6b6b;
   font-size: 9px;
   font-weight: 500;
   pointer-events: none;

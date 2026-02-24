@@ -37,6 +37,29 @@ export const sinkSimHandlers = {
       state.xySeries.y.push(yVal ?? null);
     },
   },
+  xyzScope: {
+    init: (ctx, block) => {
+      const inputs = ctx.inputMap.get(block.id) || [];
+      const state = ctx.blockState.get(block.id) || {};
+      state.xyzSeries = { x: [], y: [], z: [] };
+      state.xyzConnected = inputs.map((fromId) => Boolean(fromId));
+      ctx.blockState.set(block.id, state);
+    },
+    afterStep: (ctx, block) => {
+      const state = ctx.blockState.get(block.id);
+      if (!state?.xyzSeries) return;
+      const inputs = ctx.inputMap.get(block.id) || [];
+      const xId = inputs[0];
+      const yId = inputs[1];
+      const zId = inputs[2];
+      const xVal = xId ? ctx.outputs.get(xId) : null;
+      const yVal = yId ? ctx.outputs.get(yId) : null;
+      const zVal = zId ? ctx.outputs.get(zId) : null;
+      state.xyzSeries.x.push(xVal ?? null);
+      state.xyzSeries.y.push(yVal ?? null);
+      state.xyzSeries.z.push(zVal ?? null);
+    },
+  },
   fileSink: {
     init: (ctx, block) => {
       const state = ctx.blockState.get(block.id) || {};

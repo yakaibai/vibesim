@@ -4,6 +4,7 @@ export const sinkLibrary = {
   blocks: [
     { type: "scope", label: "Scope" },
     { type: "xyScope", label: "X-Y Scope" },
+    { type: "xyzScope", label: "XYZ 3D Scope" },
     { type: "fileSink", label: "Output File" },
     { type: "labelSink", label: "Label" },
   ],
@@ -138,6 +139,70 @@ export const createSinkTemplates = (helpers) => {
         block.scopePaths = [path];
         block.scopePlot = plot;
         block.scopeAxes = { xAxis, yAxis, xTicks, yTicks, xTickLabels, yTickLabels };
+        block.scopeClipRect = clipRect;
+        block.scopeInputHints = [];
+      },
+    },
+    xyzScope: {
+      width: 220,
+      height: 180,
+      inputs: [
+        { x: 0, y: 50, side: "left" },
+        { x: 0, y: 90, side: "left" },
+        { x: 0, y: 130, side: "left" },
+      ],
+      outputs: [],
+      defaultParams: { xMin: "", xMax: "", yMin: "", yMax: "", zMin: "", zMax: "", width: 220, height: 180, rotationX: 30, rotationY: 45 },
+      render: (block) => {
+        const group = block.group;
+        const body = svgRect(0, 0, block.width, block.height, "block-body");
+        group.appendChild(body);
+        const title = svgText(10, 20, "XYZ 3D Scope");
+        group.appendChild(title);
+        block.bodyRect = body;
+        block.scopeTitle = title;
+        const plotHeight = block.height - 40;
+        const plot = svgRect(10, 30, block.width - 20, plotHeight, "scope-plot");
+        group.appendChild(plot);
+        const defs = createSvgElement("defs");
+        const clipId = `scope-clip-${block.id}`;
+        const clipRect = createSvgElement("rect", {
+          x: plot.getAttribute("x"),
+          y: plot.getAttribute("y"),
+          width: plot.getAttribute("width"),
+          height: plot.getAttribute("height"),
+        });
+        const clipPath = createSvgElement("clipPath", { id: clipId });
+        clipPath.appendChild(clipRect);
+        defs.appendChild(clipPath);
+        group.appendChild(defs);
+        const axesGroup = createSvgElement("g", { class: "scope-axes" });
+        const xAxis = createSvgElement("line", { class: "scope-axis scope-axis-x" });
+        const yAxis = createSvgElement("line", { class: "scope-axis scope-axis-y" });
+        const zAxis = createSvgElement("line", { class: "scope-axis scope-axis-z" });
+        axesGroup.appendChild(xAxis);
+        axesGroup.appendChild(yAxis);
+        axesGroup.appendChild(zAxis);
+        const xTicks = Array.from({ length: 9 }, () => createSvgElement("line", { class: "scope-tick" }));
+        const yTicks = Array.from({ length: 9 }, () => createSvgElement("line", { class: "scope-tick" }));
+        const zTicks = Array.from({ length: 9 }, () => createSvgElement("line", { class: "scope-tick" }));
+        const xTickLabels = Array.from({ length: 9 }, () => createSvgElement("text", { class: "scope-tick-label scope-tick-label-x" }));
+        const yTickLabels = Array.from({ length: 9 }, () => createSvgElement("text", { class: "scope-tick-label scope-tick-label-y" }));
+        const zTickLabels = Array.from({ length: 9 }, () => createSvgElement("text", { class: "scope-tick-label scope-tick-label-z" }));
+        xTicks.forEach((tick) => axesGroup.appendChild(tick));
+        yTicks.forEach((tick) => axesGroup.appendChild(tick));
+        zTicks.forEach((tick) => axesGroup.appendChild(tick));
+        xTickLabels.forEach((label) => axesGroup.appendChild(label));
+        yTickLabels.forEach((label) => axesGroup.appendChild(label));
+        zTickLabels.forEach((label) => axesGroup.appendChild(label));
+        group.appendChild(axesGroup);
+        const pathsGroup = createSvgElement("g", { class: "scope-paths", "clip-path": `url(#${clipId})` });
+        group.appendChild(pathsGroup);
+        const path = createSvgElement("path", { class: "scope-path scope-path-1" });
+        pathsGroup.appendChild(path);
+        block.scopePaths = [path];
+        block.scopePlot = plot;
+        block.scopeAxes = { xAxis, yAxis, zAxis, xTicks, yTicks, zTicks, xTickLabels, yTickLabels, zTickLabels };
         block.scopeClipRect = clipRect;
         block.scopeInputHints = [];
       },

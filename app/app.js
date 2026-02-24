@@ -1,7 +1,7 @@
 import { state, markDirty, clearDirty, signalDiagramChanged, setCurrentFilePath, getCurrentFilePath, setFitToDiagram, setUpdateStabilityPanel } from './state.js';
 import { toYAML, serializeDiagram, parseYAML, sanitizeFilename } from './file-operations.js';
-import { showConfirmSaveModal, handleSaveAsSubsystem, setStatusEl, setDiagramNameInput, setRuntimeInput, setSimDt, setAutoRouteInput, setVariablesInput, setVariablesPreview } from './modal-handlers.js';
-import { handleMenuAction, setFileOpenInput, setDeleteSelectionBtn, setHomeBtn as setHomeBtnMenu, setZoomInBtn as setZoomInBtnMenu, setZoomOutBtn as setZoomOutBtnMenu, performOpen, newDiagram } from './menu-handlers.js';
+import { showConfirmSaveModal, handleSaveAsSubsystem, setStatusEl } from './modal-handlers.js';
+import { handleMenuAction, setFileOpenInput, setDeleteSelectionBtn, setHomeBtn as setHomeBtnMenu, setZoomInBtn as setZoomInBtnMenu, setZoomOutBtn as setZoomOutBtnMenu, performOpen, newDiagram, setDiagramNameInput, setRuntimeInput, setSimDt, setAutoRouteInput, setVariablesInput, setVariablesPreview } from './menu-handlers.js';
 import { openSubsystemFromBlock, closeSubsystemView, loadDiagram, setSubsystemUpBtn, updateSubsystemNavUi, setRendererRef as setRendererRefDiagram } from "./diagram-handlers.js";
 import { setRendererRef, getViewBox, setViewBox, getZoomScale, setZoomScale, updateGrid, clearWorkspace, initViewBox, setSvg, setUpdateStatusBar } from './workspace-handlers.js';
 import { createRenderer } from "../render.js";
@@ -16,12 +16,81 @@ import { initSidebarUI, initZoomButtons, setStatusElRef, setHomeBtnRef, setZoomI
 import { initEventListeners, setRendererRef as setRendererRefEvent, setStatusEl as setStatusElEvent, setRuntimeInput as setRuntimeInputEvent, setInspectorBody, setRotateSelectionBtn, setMarginLoopSelect, setMarginOutputText, setRenderInspector as setRenderInspectorEvent } from "./event-handlers.js";
 
 
-const themes = [
-  { id: "default", name: "Default Dark" },
-  { id: "light", name: "Light" },
-  { id: "monokai", name: "Monokai" },
-  { id: "dracula", name: "Dracula" },
-];
+let themes = [];
+
+const loadThemes = async () => {
+  try {
+    const response = await fetch('styles/themes.css');
+    const cssText = await response.text();
+    const themeRegex = /\/\*\s*Theme Name:\s*([^\*]+)\s*\*\//g;
+    const matches = [...cssText.matchAll(themeRegex)];
+    
+    themes = matches.map((match, index) => {
+      const name = match[1].trim();
+      const isDefault = index === 0;
+      return {
+        id: isDefault ? 'default' : name.toLowerCase().replace(/\s+/g, '-'),
+        name: name
+      };
+    });
+    
+    updateThemeMenu();
+    
+    if (themes.length > 0) {
+      const savedTheme = localStorage.getItem('theme');
+      if (savedTheme && themes.find(t => t.id === savedTheme)) {
+        applyTheme(savedTheme);
+      } else {
+        applyTheme(themes[0].id);
+      }
+    }
+  } catch (error) {
+    console.error('Failed to load themes:', error);
+    themes = [
+      { id: "default", name: "Default Dark" },
+      { id: "light", name: "Light" },
+      { id: "monokai", name: "Monokai" },
+      { id: "dracula", name: "Dracula" },
+      { id: "solarized", name: "Solarized Dark" },
+    ];
+    updateThemeMenu();
+    
+    const savedTheme = localStorage.getItem('theme');
+    if (savedTheme && themes.find(t => t.id === savedTheme)) {
+      applyTheme(savedTheme);
+    } else {
+      applyTheme(themes[0].id);
+    }
+  }
+};
+
+const updateThemeMenu = () => {
+  const viewMenu = document.querySelector('[data-menu="view"]');
+  if (!viewMenu) return;
+  
+  const dropdown = viewMenu.querySelector('.menubar-dropdown');
+  if (!dropdown) return;
+  
+  const divider = dropdown.querySelector('.menubar-divider');
+  if (!divider) return;
+  
+  const themeItems = dropdown.querySelectorAll('[data-action^="theme-"]');
+  themeItems.forEach(item => item.remove());
+  
+  themes.forEach(theme => {
+    const item = document.createElement('div');
+    item.className = 'menubar-item';
+    item.dataset.action = `theme-${theme.id}`;
+    item.innerHTML = `<span>${theme.name}</span>`;
+    
+    item.addEventListener('click', (e) => {
+      e.stopPropagation();
+      handleMenuAction(`theme-${theme.id}`);
+    });
+    
+    dropdown.appendChild(item);
+  });
+};
 
 const applyTheme = (themeId) => {
   const chosen = themes.find((theme) => theme.id === themeId) || themes[0];
@@ -126,6 +195,8 @@ const fitToDiagram = () => {
 };
 
 export function init() {
+  loadThemes();
+  
   svg = document.getElementById("svgCanvas");
   blockLayer = document.getElementById("blockLayer");
   wireLayer = document.getElementById("wireLayer");
@@ -283,7 +354,6 @@ export function init() {
   }
   updateStabilityPanel();
 
-  applyTheme(themes[0].id);
   window.addEventListener("diagramChanged", updateStabilityPanel);
 
   const applyVariablesBtn = document.getElementById("applyVariables");

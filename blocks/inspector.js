@@ -318,6 +318,73 @@ export const createInspector = ({
           renderScope(block);
         });
       }
+    } else if (block.type === "xyzScope") {
+      const limits = block.computedLimits || {};
+      inspectorBody.innerHTML = `
+        <label class="param">x min
+          <input type="text" data-edit="xMin" value="${asDisplayValue(block.params.xMin, limits.xMin ?? -1.2)}">
+        </label>
+        <label class="param">x max
+          <input type="text" data-edit="xMax" value="${asDisplayValue(block.params.xMax, limits.xMax ?? 1.2)}">
+        </label>
+        <label class="param">y min
+          <input type="text" data-edit="yMin" value="${asDisplayValueWithFormatter(block.params.yMin, limits.yMin ?? -1.2, (v) => formatSignificant(Number(v), 2))}">
+        </label>
+        <label class="param">y max
+          <input type="text" data-edit="yMax" value="${asDisplayValueWithFormatter(block.params.yMax, limits.yMax ?? 1.2, (v) => formatSignificant(Number(v), 2))}">
+        </label>
+        <label class="param">z min
+          <input type="text" data-edit="zMin" value="${asDisplayValueWithFormatter(block.params.zMin, limits.zMin ?? -1.2, (v) => formatSignificant(Number(v), 2))}">
+        </label>
+        <label class="param">z max
+          <input type="text" data-edit="zMax" value="${asDisplayValueWithFormatter(block.params.zMax, limits.zMax ?? 1.2, (v) => formatSignificant(Number(v), 2))}">
+        </label>
+        <label class="param">Rotation X (deg)
+          <input type="number" data-edit="rotationX" value="${block.params.rotationX ?? 30}" min="-180" max="180" step="5">
+        </label>
+        <label class="param">Rotation Y (deg)
+          <input type="number" data-edit="rotationY" value="${block.params.rotationY ?? 45}" min="-180" max="180" step="5">
+        </label>
+        <label class="param">Width
+          <input type="number" data-edit="width" value="${block.params.width ?? block.width}" min="160" step="10">
+        </label>
+        <label class="param">Height
+          <input type="number" data-edit="height" value="${block.params.height ?? block.height}" min="120" step="10">
+        </label>
+      `;
+      ["xMin", "xMax", "yMin", "yMax", "zMin", "zMax"].forEach((key) => {
+        const input = inspectorBody.querySelector(`input[data-edit='${key}']`);
+        if (!input) return;
+        input.addEventListener("input", () => {
+          block.params[key] = input.value;
+          renderScope(block);
+        });
+      });
+      ["rotationX", "rotationY"].forEach((key) => {
+        const input = inspectorBody.querySelector(`input[data-edit='${key}']`);
+        if (!input) return;
+        input.addEventListener("input", () => {
+          block.params[key] = Number(input.value);
+          renderScope(block);
+        });
+      });
+      ["width", "height"].forEach((key) => {
+        const input = inspectorBody.querySelector(`input[data-edit='${key}']`);
+        if (!input) return;
+        input.addEventListener("change", () => {
+          const widthValue = Number(inspectorBody.querySelector("[data-edit='width']")?.value);
+          const heightValue = Number(inspectorBody.querySelector("[data-edit='height']")?.value);
+          getRenderer().resizeBlock(block, widthValue, heightValue);
+          input.value = key === "width" ? block.width : block.height;
+        });
+      });
+      const showTickLabelsInput = inspectorBody.querySelector("input[data-edit='showTickLabels']");
+      if (showTickLabelsInput) {
+        showTickLabelsInput.addEventListener("change", () => {
+          block.params.showTickLabels = showTickLabelsInput.checked;
+          renderScope(block);
+        });
+      }
     } else if (block.type === "chirp") {
       inspectorBody.innerHTML = `
         <label class="param">Amplitude

@@ -58,6 +58,8 @@ const captureUiState = () => {
       scopeState[block.id] = { kind: "scope", data: deepClone(block.scopeData) };
     } else if (block.type === "xyScope" && block.xyScopeData) {
       scopeState[block.id] = { kind: "xyScope", data: deepClone(block.xyScopeData) };
+    } else if (block.type === "xyzScope" && block.xyzScopeData) {
+      scopeState[block.id] = { kind: "xyzScope", data: deepClone(block.xyzScopeData) };
     }
   });
   return { routePoints, scopeState };

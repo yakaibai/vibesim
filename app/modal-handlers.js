@@ -1,40 +1,10 @@
 import { state } from './state.js';
 import { serializeDiagram, toYAML, sanitizeFilename } from './file-operations.js';
 
-let diagramNameInput = null;
-let runtimeInput = null;
-let simDt = null;
-let autoRouteInput = null;
-let variablesInput = null;
-let variablesPreview = null;
 let statusEl = null;
 
 export function setStatusEl(el) {
   statusEl = el;
-}
-
-export function setDiagramNameInput(el) {
-  diagramNameInput = el;
-}
-
-export function setRuntimeInput(el) {
-  runtimeInput = el;
-}
-
-export function setSimDt(el) {
-  simDt = el;
-}
-
-export function setAutoRouteInput(el) {
-  autoRouteInput = el;
-}
-
-export function setVariablesInput(el) {
-  variablesInput = el;
-}
-
-export function setVariablesPreview(el) {
-  variablesPreview = el;
 }
 
 export function handleSaveAsSubsystem() {
