@@ -2502,8 +2502,8 @@ export function createRenderer({
       }
       let finalPoints = preservePathShape
         ? applyWireOffsets(conn, workingPoints)
-        : simplifyOrthogonalPath(applyWireOffsets(conn, workingPoints));
-      if (!preservePathShape) finalPoints = tryShorterOrthogonalPath(conn, finalPoints);
+        : (state.autoRoute !== false ? simplifyOrthogonalPath(applyWireOffsets(conn, workingPoints)) : applyWireOffsets(conn, workingPoints));
+      if (!preservePathShape && state.autoRoute !== false) finalPoints = tryShorterOrthogonalPath(conn, finalPoints);
       const segments = buildSegments(finalPoints, conn);
       if (DEBUG_WIRE_CHECKS && debugLog && finalPoints.length > 1 && segments.length === 0) {
         writeDebug(debugLog, `[wire ${conn.from}->${conn.to}] no segments for render points`);
@@ -2532,8 +2532,8 @@ export function createRenderer({
       }
       let finalPoints = preservePathShape
         ? applyWireOffsets(conn, workingPoints)
-        : simplifyOrthogonalPath(applyWireOffsets(conn, workingPoints));
-      if (!preservePathShape) finalPoints = tryShorterOrthogonalPath(conn, finalPoints);
+        : (state.autoRoute !== false ? simplifyOrthogonalPath(applyWireOffsets(conn, workingPoints)) : applyWireOffsets(conn, workingPoints));
+      if (!preservePathShape && state.autoRoute !== false) finalPoints = tryShorterOrthogonalPath(conn, finalPoints);
       if (!finalPoints.length || hasInvalidPoint(finalPoints)) {
         if (DEBUG_WIRE_CHECKS && debugLog) {
           const bad = hasInvalidPoint(finalPoints);
